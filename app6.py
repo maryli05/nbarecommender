@@ -228,20 +228,45 @@ def build_user_features(df):
         feats = []
         feats.extend([f"Familiar_Team_{t}" for t in familiar_teams])
 
-        # ⭐ Favorite team
+        # Favorite team
         if uid in fav_teams:
             feats.append(f"Fav_Team_{fav_teams[uid]}")
 
-        # 👥 Add activity segment
+        # Activity segment
         seg = player_segments.get(uid, "Unknown")
         feats.append(seg)
-
-        # 📈 Boost big market preference if low-activity
         if seg == "Low_Activity":
             feats.append("Prefers_Big_Market")
 
+        # 🆕 Regional Loyalty
+        regions_played = user_games["teams"].map(lambda t: team_regions.get(t, "Unknown")).dropna()
+        if not regions_played.empty:
+            top_region = regions_played.value_counts().idxmax()
+            ratio = regions_played.value_counts(normalize=True).iloc[0]
+            if ratio > 0.7:  # strong concentration
+                feats.append(f"Region_Loyalty_{top_region}")
+
         features.append((uid, feats))
     return features
+
+
+def build_item_features(df):
+    features = []
+    for row in df.itertuples():
+        feats = []
+        feats.extend(row.teams)  # Teams
+        feats.extend(row.regions)  # Regions already extracted
+        feats.extend(tag_market(row.teams))
+        feats.extend(tag_rivalry(row.teams))
+        feats.extend(tag_superstar(row.star_players))
+
+        # 🆕 Add region feature explicitly
+        for reg in row.regions:
+            feats.append(f"Region_{reg}")
+
+        features.append((row.event_norm, feats))
+    return features
+
 
 
 
@@ -385,13 +410,13 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     st.subheader("⚙️ Train Model")
     st.markdown("""
-### 🔎 About this Tab
+#### About this Tab
 
 This section lets you **train and evaluate** the recommender model.  
 You can experiment with different model settings and instantly see how they affect recommendation quality.
 
-- Use the sliders to adjust **model hyperparameters** (latent dimensions, training epochs, and ranking loss).  
-- Apply **boost factors** (Star Boost, BigFan Boost) to emphasize marquee games or heavy bettors.  
+- Use the sliders to adjust **model hyperparameters**.  
+- Apply **boost factors** (Star Boost, BigFan Boost).  
 
 The evaluation is **restricted to the selected playoff round** (e.g., R8, Quarterfinals).  
 That means metrics are calculated **only for players who actually placed bets in that round**, ensuring the results reflect real betting behavior.  
@@ -495,7 +520,6 @@ Together, these metrics provide both a **coverage view (Hit Rate)** and a **rank
             f"Hit@3={best['Hit@3']:.2%}, Precision@3={best['Precision@3']:.2%}, NDCG={best['NDCG']:.2f}"
         )
 
-
 # --- Tab 2: Player Explorer ---
 with tab2:
     st.subheader("🎯 Player Explorer")
@@ -540,59 +564,153 @@ This section lets you **explore personalized recommendations** for individual pl
                     )[:3]
 
                     # Pretty mapping
-                    norm_to_pretty = dict(zip(playoff_schedule["game_norm"], playoff_schedule["game"]))
+                    norm_to_pretty = dict(zip(
+                        playoff_schedule["game_norm"], 
+                        playoff_schedule["game"]
+                    ))
                     rec_games = [norm_to_pretty.get(g, g) for g, _ in recs]
 
                     # 🎯 Actual bets
-                    actual_games = df_validation.loc[df_validation["mask_id"] == uid, "game_norm"].unique()
+                    actual_games = df_validation.loc[
+                        df_validation["mask_id"] == uid, "game_norm"
+                    ].unique()
                     actual_pretty = [norm_to_pretty.get(g, g) for g in actual_games if g in norm_to_pretty]
 
                     # Player segment
                     segment = player_segments.get(uid, "Unknown")
+
+                    # 🆕 Regional loyalty (from user features)
+                    user_feats_dict = dict(build_user_features(df_train))
+                    loyalty = [f for f in user_feats_dict.get(uid, []) if f.startswith("Region_Loyalty_")]
+                    region_loyalty = loyalty[0] if loyalty else "None"
 
                     # ✅ Save in session state
                     st.session_state.update({
                         "last_uid": uid,
                         "last_recs": rec_games,
                         "last_actual": actual_pretty,
-                        "last_segment": segment
+                        "last_segment": segment,
+                        "last_region_loyalty": region_loyalty
                     })
 
-        # --- Show results ---
+        # --- Show recommendations ---
         if "last_recs" in st.session_state:
             st.write(f"**Top {round_choice} Recommendations for mask_id {st.session_state['last_uid']}:**")
             for g in st.session_state["last_recs"]:
                 st.write(f"👉 {g}")
 
+        # --- Show actual bets (highlighted) ---
         if "last_actual" in st.session_state:
             st.write(f"**Actual Bets in Validation for mask_id {st.session_state['last_uid']}:**")
             if st.session_state["last_actual"]:
                 for g in st.session_state["last_actual"]:
-                    st.write(f"✅ {g}")
+                    st.markdown(f"- ✅ **{g}**")
             else:
                 st.write("❌ No bets recorded in validation for this player.")
 
+        # --- Historical Betting Behaviour ---
+        if "last_uid" in st.session_state:
+            player_history = df_train.loc[df_train["mask_id"] == st.session_state["last_uid"]]
+
+            if not player_history.empty:
+                st.markdown("### 📈 Historical Betting Behaviour (Training Data)")
+                
+                # Detect date column
+                date_col = None
+                for cand in ["betdate", "purchasedate", "date", "transaction_date", "event_date"]:
+                    if cand in player_history.columns:
+                        date_col = cand
+                        break
+
+                if date_col:
+                    # Ensure datetime
+                    player_history[date_col] = pd.to_datetime(player_history[date_col], errors="coerce")
+
+                    # Group by month
+                    history_counts = (
+                        player_history.groupby(player_history[date_col].dt.to_period("M"))
+                        .size()
+                        .reset_index(name="bets")
+                    )
+                    history_counts[date_col] = history_counts[date_col].astype(str)
+                    st.line_chart(history_counts.set_index(date_col)["bets"])
+
+                # --- Top 3 favourite teams ---
+                norm_to_pretty = dict(zip(
+                    playoff_schedule["game_norm"], 
+                    playoff_schedule["game"]
+                ))
+
+                team_counts = []
+                for g in player_history["game_norm"]:
+                    pretty = norm_to_pretty.get(g, g)
+                    for team in top_players.keys():
+                        if team.lower() in pretty.lower():
+                            team_counts.append(team)
+
+                if team_counts:
+                    st.markdown("### 🏀 Top 3 Teams This Player Bets On")
+                    top3 = pd.Series(team_counts).value_counts().head(3)
+
+                    # Show overall totals
+                    for team, count in top3.items():
+                        st.markdown(f"- **{team}**: {count} bets")
+
+                    # --- Monthly stacked trend for Top 3 ---
+                    st.markdown("### 📊 Monthly Trend for Top 3 Teams")
+                    team_history = []
+                    for g, d in zip(player_history["game_norm"], player_history[date_col]):
+                        pretty = norm_to_pretty.get(g, g)
+                        for team in top3.index:
+                            if team.lower() in pretty.lower():
+                                team_history.append({
+                                    "month": d.to_period("M").strftime("%Y-%m"),
+                                    "team": team
+                                })
+
+                    if team_history:
+                        df_team_history = pd.DataFrame(team_history)
+                        team_trend = (
+                            df_team_history.groupby(["month", "team"])
+                            .size()
+                            .reset_index(name="bets")
+                        )
+                        team_trend_pivot = team_trend.pivot(
+                            index="month", columns="team", values="bets"
+                        ).fillna(0)
+
+                        # Normalize to percentages for stacked share
+                        team_trend_norm = team_trend_pivot.div(team_trend_pivot.sum(axis=1), axis=0)
+
+                        st.area_chart(team_trend_norm)
+                else:
+                    st.info("No team associations found for this player's betting history.")
+
+            else:
+                st.info("No historical bets found for this player in training data.")
+
         # --- AI Explanation ---
-# --- AI Explanation ---
         if "last_recs" in st.session_state and st.button("🤖 Explain with AI"):
             fav_team = fav_teams.get(st.session_state["last_uid"], "None")
             rec_games = st.session_state["last_recs"]
             actual_games = st.session_state.get("last_actual", [])
             segment = st.session_state.get("last_segment", "Unknown")
+            region_loyalty = st.session_state.get("last_region_loyalty", "None")
 
             prompt = f"""
             Player {st.session_state['last_uid']} is segmented as a **{segment}** bettor.
 
             They were recommended these games: {", ".join(rec_games)}.
             Their favorite team is {fav_team}.
+            Their regional loyalty is {region_loyalty}.
             They actually bet on: {", ".join(actual_games) if actual_games else "No bets in validation"}.
 
             Please explain why these games are relevant to this player based on:
             - their favorite team,
             - familiar teams,
-            - star players,
             - rivalries,
             - market size,
+            - their regional loyalty ({region_loyalty}),
             - and typical behaviors of {segment} bettors.
             Also compare the recommendations against the actual bets they made.
             """
@@ -613,6 +731,9 @@ This section lets you **explore personalized recommendations** for individual pl
         if "last_explanation" in st.session_state:
             st.markdown("### 🤖 AI Explanation")
             st.write(st.session_state["last_explanation"])
+
+
+
 
 
 
