@@ -22,6 +22,11 @@ client = AzureOpenAI(
     api_version=os.getenv("AZURE_OPENAI_API_VERSION")
 )
 
+client = AzureOpenAI(
+    api_key=api_key,
+    azure_endpoint=endpoint,
+    api_version=api_version
+)
 # -----------------------------
 # Setup
 # -----------------------------
