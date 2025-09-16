@@ -16,6 +16,7 @@ pandas
 scikit-learn
 matplotlib
 seaborn
-lightfm
+lightfm @ git+https://github.com/lyst/lightfm.git
+
 
 
