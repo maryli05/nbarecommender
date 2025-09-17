@@ -406,15 +406,26 @@ with st.sidebar:
 
     st.header("📌 Tab Overview")
     st.markdown("""
-    This app recommends NBA games using a **hybrid recommender system**:
-    - Train & Evaluate - This section lets you train and evaluate the recommender model.
-You can experiment with different model settings and instantly see how they affect recommendation quality.
-    - Player Explorer  
-    - Simulation  
-    - Dashboard  
-    - Chatbot  
+    This interactive Streamlit app recommends NBA playoff games using a **hybrid recommender system** that blends collaborative filtering, popularity trends, and contextual boosts (e.g., star players, fan behavior).  
+    It’s designed to simulate real-world betting patterns and provide both **personalized** and **aggregate** insights.
+
+    ---
+
+    ### Key Sections
+
+    - ** Train & Evaluate** – Train the model with customizable hyperparameters (loss, latent dimensions, epochs) and boost factors (star power, fan loyalty). Evaluate model quality instantly using Hit@3, Precision@3, and NDCG.  
+
+    - ** Player Explorer** – Get personalized Top-3 game recommendations for any player (`mask_id`), compare against actual bets, explore historical betting behavior, and view AI-powered explanations of recommendations.  
+
+    - ** Simulation** – Simulate collective betting at the **series level**, comparing actual vs. predicted bettors across playoff rounds to validate group-level behavior.  
+
+    - ** Dashboard** – Gain marketing insights, including top wagered teams and players, segment preferences, pre-playoff → playoff loyalty shifts, and the most anticipated R8 series.  
+
+    - ** Chatbot** – Ask natural-language questions to an AI assistant for ad-hoc marketing and betting insights.  
+
+    ---
     """)
-    
+
 # Filter playoff schedule based on round
 round_sched = playoff_schedule[playoff_schedule["round"] == round_choice]
 
@@ -551,6 +562,50 @@ Metrics reported:
             )
         except Exception as e:
             st.error(f"❌ Tuning failed: {e}")
+
+    # --- Why This Model Section ---
+    st.markdown("---")
+    st.subheader("📌 Why This Model?")
+    st.markdown("""
+We chose **LightFM with WARP/BPR loss** because it’s a **hybrid recommender system**:  
+- It combines **collaborative filtering** (learning from historical player–game interactions) with **content-based features** (teams, regions, star players).  
+- Unlike simple popularity-based baselines, it **personalizes** recommendations per player.  
+- Unlike pure deep learning approaches, it remains **lightweight, interpretable, and efficient** for limited training data.  
+
+✅ Better than **popularity models**: avoids recommending only the most-bet games.  
+✅ Better than **matrix factorization alone**: incorporates contextual features (teams, stars, regions).  
+✅ More practical than **deep learning**: faster training, easier hyperparameter tuning, strong performance on sparse datasets.  
+
+In short: this model balances **accuracy, scalability, and explainability**, making it a strong fit for NBA betting recommendation tasks.
+""")
+    # --- Assumptions Section ---
+    st.markdown("---")
+    st.subheader("📌 Key Assumptions")
+    st.markdown("""
+To keep the recommender realistic and focused, we make several **assumptions** in this implementation:
+
+1. **Round-Specific Predictions**  
+   - Recommendations are generated **only for the selected playoff round** (e.g., R8, Quarterfinals, Semifinals, Finals).  
+   - The model does **not predict across rounds**; each round is treated independently.  
+
+2. **Validation Restriction**  
+   - Evaluation metrics (Hit@3, Precision@3, NDCG) are calculated **only on players who actually placed bets in that round**.  
+   - This avoids inflating metrics with inactive players.  
+
+3. **Historical Training Window**  
+   - Training data is limited to **pre-playoff and prior betting history**.  
+   - The model assumes **past betting patterns** (teams, regions, star players) generalize into the playoffs.  
+
+4. **Top-N Focus**  
+   - Predictions are focused on **Top-3 (for player-level)** and **Top-5 (for simulation)** recommendations.  
+   - The assumption is bettors consider only a **shortlist of games**, not the full schedule.  
+
+5. **Feature Engineering**  
+   - Contextual boosts (Star Boost, Fan Boost) are applied **uniformly across rounds**, not dynamically per game.  
+   - Team/region tags are simplified (e.g., mapping “LA” to Lakers/Clippers).  
+
+These assumptions ensure the model stays **practical, interpretable, and aligned with playoff betting behavior**, while leaving room for future enhancements (e.g., cross-round prediction, dynamic boosts).
+""")
 
 
 
@@ -986,6 +1041,7 @@ Analyze betting behavior from different marketing perspectives:
         st.error(f"❌ Pre-Playoff → Playoff flow failed: {e}")
 
     # --- Most Anticipated Game (R8) ---
+    # --- Most Anticipated Game (R8) ---
     st.markdown("---")
     st.subheader("🔥 Most Anticipated Game (R8)")
     try:
@@ -1029,8 +1085,7 @@ Analyze betting behavior from different marketing perspectives:
                 results.append({
                     "game": norm_to_pretty.get(g, g),
                     "actual_bettors": len(actual_players),
-                    "predicted_bettors": len(predicted_players),
-                    "gap": len(predicted_players) - len(actual_players)
+                    "predicted_bettors": len(predicted_players)
                 })
 
             results_df = pd.DataFrame(results).sort_values("actual_bettors", ascending=False)
@@ -1041,12 +1096,6 @@ Analyze betting behavior from different marketing perspectives:
                     f"🔥 The most anticipated R8 series is **{top_game['game']}** "
                     f"with {top_game['actual_bettors']} bettors (validation)."
                 )
-
-                st.write("### Actual vs Predicted Bettors per R8 Series")
-                st.bar_chart(results_df.set_index("game")[["actual_bettors", "predicted_bettors"]])
-
-                st.write("### Prediction Gaps (Predicted - Actual)")
-                st.dataframe(results_df[["game", "actual_bettors", "predicted_bettors", "gap"]])
             else:
                 st.info("ℹ️ No valid R8 results to display.")
         else:
@@ -1054,23 +1103,23 @@ Analyze betting behavior from different marketing perspectives:
     except Exception as e:
         st.error(f"❌ R8 analysis failed: {e}")
 
-    # --- Marketing Chatbot ---
-    st.markdown("---")
-    st.subheader("🤖 Marketing Analytics Chatbot")
-    query = st.text_input("Ask a marketing question (e.g., Which team has the most loyal bettors?)")
+        # --- Marketing Chatbot ---
+        st.markdown("---")
+        st.subheader("🤖 Marketing Analytics Chatbot")
+        query = st.text_input("Ask a marketing question (e.g., Which team has the most loyal bettors?)")
 
-    if query and "model" in st.session_state:
-        try:
-            resp = client.chat.completions.create(
-                model="gpt-35-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a marketing analytics assistant for NBA betting insights."},
-                    {"role": "user", "content": query}
-                ],
-                max_tokens=400
-            )
-            st.markdown("### 📝 AI Marketing Insight")
-            st.write(resp.choices[0].message.content)
-        except Exception as e:
-            st.error(f"❌ Chatbot failed: {e}")
+        if query and "model" in st.session_state:
+            try:
+                resp = client.chat.completions.create(
+                    model="gpt-35-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a marketing analytics assistant for NBA betting insights."},
+                        {"role": "user", "content": query}
+                    ],
+                    max_tokens=400
+                )
+                st.markdown("### 📝 AI Marketing Insight")
+                st.write(resp.choices[0].message.content)
+            except Exception as e:
+                st.error(f"❌ Chatbot failed: {e}")
 
