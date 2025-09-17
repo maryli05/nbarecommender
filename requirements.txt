@@ -7,7 +7,8 @@ matplotlib==3.8.4
 seaborn==0.13.2
 
 # ✅ LightFM (use stable version with wheels available for Py3.9)
-lightfm==1.16
+lightfm @ https://github.com/lyst/lightfm/releases/download/1.16/lightfm-1.16-cp39-cp39-manylinux2014_x86_64.whl
+
 
 # App + infra dependencies
 boto3==1.28.44
