@@ -34,10 +34,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential libopenblas-dev liblapack-dev gfortran
 
-      # 👇 Remove conflicting Azure AI SDKs that cause "proxies" error
-      - name: Remove conflicting Azure AI SDKs
+      # 👇 Remove conflicting Azure AI SDK (leave openai alone)
+      - name: Remove conflicting Azure AI SDK
         run: |
-          pip uninstall -y azure-ai-openai openai || true
+          pip uninstall -y azure-ai-openai || true
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
@@ -67,5 +67,4 @@ jobs:
           app-name: 'nbarecommender'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_619B3FB2A3D44462AE060F124FFAC2DA }}
-
 
