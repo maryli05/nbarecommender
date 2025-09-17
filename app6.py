@@ -421,7 +421,7 @@ round_sched = playoff_schedule[playoff_schedule["round"] == round_choice]
 # -----------------------------
 # Tabs
 # -----------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "⚙️ Train & Evaluate", "🎯 Player Explorer", "📅 Simulation",
     "📊 Dashboard"
 ])
