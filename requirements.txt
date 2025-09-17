@@ -1,3 +1,4 @@
+# Core web + Azure
 boto3==1.28.44
 extra_streamlit_components==0.1.60
 pymongo==4.5.0
@@ -10,18 +11,18 @@ stripe==6.5.0
 PyJWT==2.8.0
 openai==1.55.3
 openpyxl==3.1.2
+httpx==0.27.2
 
-# Core data/ML dependencies
-numpy==1.26.4
-scipy==1.11.4
-pandas==2.2.2
-scikit-learn==1.5.0
-matplotlib==3.8.4
-seaborn==0.13.2
+# Core data/ML dependencies compatible with Python 3.9
+numpy==1.23.5
+scipy==1.10.1
+pandas==1.5.3
+scikit-learn==1.2.2
+matplotlib==3.7.2
+seaborn==0.12.2
 
-# Install LightFM from source (needs system libs)
+# LightFM
 lightfm==1.17
-httpx==0.27.2 
 
 
 
