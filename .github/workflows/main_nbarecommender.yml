@@ -37,10 +37,15 @@ jobs:
       # 👇 Remove conflicting Azure SDKs that cause "proxies" error
       - name: Remove conflicting Azure SDKs
         run: |
-          pip uninstall -y azure-ai-openai azure-core || true
+         pip uninstall -y azure-ai-openai azure-core azure-common azure-identity || true
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
+        
+      - name: Check installed OpenAI package
+        run: |
+          pip show openai
+          pip list | grep azure || true
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
@@ -67,6 +72,7 @@ jobs:
           app-name: 'nbarecommender'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_619B3FB2A3D44462AE060F124FFAC2DA }}
+
 
 
 
