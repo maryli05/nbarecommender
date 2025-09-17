@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read # This is required for actions/checkout
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +27,12 @@ jobs:
 
       - name: Upgrade pip
         run: pip install --upgrade pip
+
+      # 👇 Install system libraries so LightFM/numpy/scipy can work
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libopenblas-dev liblapack-dev gfortran
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
@@ -49,10 +55,11 @@ jobs:
         with:
           name: python-app
       
-      - name: 'Deploy to Azure Web App'
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
         with:
           app-name: 'nbarecommender'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_619B3FB2A3D44462AE060F124FFAC2DA }}
+
+
