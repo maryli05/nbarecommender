@@ -15,10 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.10
+      - name: Set up Python 3.9
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.9'
 
       - name: Create and start virtual environment
         run: |
@@ -34,13 +34,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential libopenblas-dev liblapack-dev gfortran
 
-      # 👇 Remove conflicting Azure AI SDK (leave openai alone)
-      - name: Remove conflicting Azure AI SDK
-        run: |
-          pip uninstall -y azure-ai-openai || true
-
       - name: Install Python dependencies
         run: pip install -r requirements.txt
+
+      # 👇 Force remove wrong Azure AI SDK and verify OpenAI version
+      - name: Remove conflicting Azure AI SDKs
+        run: |
+          pip uninstall -y azure-ai-openai || true
+          pip uninstall -y azure-core || true
+          pip list | grep openai || true
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
@@ -67,4 +69,6 @@ jobs:
           app-name: 'nbarecommender'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_619B3FB2A3D44462AE060F124FFAC2DA }}
+
+
 
