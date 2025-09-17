@@ -9,6 +9,26 @@ from openai import AzureOpenAI
 import os
 from dotenv import load_dotenv
 
+# -----------------------------
+# Azure Setup (persistent storage)
+# -----------------------------
+HOME_DIR = "/home"   # Azure persistent directory
+MODEL_PATH = os.path.join(HOME_DIR, "lightfm_model.pkl")
+TRAIN_PATH = os.path.join(HOME_DIR, "df_train.xlsx")
+VAL_PATH = os.path.join(HOME_DIR, "df_validation.xlsx")
+SCHED_PATH = os.path.join(HOME_DIR, "playoff_schedule.csv")
+
+# -----------------------------
+# Initialize session state
+# -----------------------------
+if "initialized" not in st.session_state:
+    st.session_state.initialized = True
+    st.session_state.model = None
+    st.session_state.mapping = None
+    st.session_state.item_feats = None
+    st.session_state.user_feats = None
+    print(">>> Session state initialized.")
+
 # Load environment variables
 load_dotenv()
 print("API KEY LOADED:", os.getenv("AZURE_OPENAI_API_KEY"))
