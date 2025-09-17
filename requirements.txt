@@ -18,8 +18,6 @@ pandas==2.2.2
 scikit-learn==1.5.0
 matplotlib==3.8.4
 seaborn==0.13.2
-lightfm @ https://files.pythonhosted.org/packages/6f/88/6f118fbe1ecf/lightfm-1.16-cp310-cp310-manylinux2014_x86_64.whl
-
 
 
 
