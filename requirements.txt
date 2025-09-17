@@ -12,6 +12,8 @@ PyJWT==2.8.0
 openai==1.55.3
 openpyxl==3.1.2
 httpx==0.27.2
+joblib==1.4.2
+
 
 # Core data/ML dependencies compatible with Python 3.9
 numpy==1.23.5
