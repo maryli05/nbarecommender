@@ -438,6 +438,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # --- TAB 1: Train & Evaluate ---
+# --- TAB 1: Train & Evaluate ---
 with tab1:
     st.subheader("⚙️ Train Model")
     st.markdown("""
@@ -476,6 +477,23 @@ Metrics reported:
     def cached_train_model(df, loss, comps, epochs):
         return train_model(df, loss=loss, comps=comps, epochs=epochs)
 
+    # --- Pretrained Model Loader ---
+    import joblib, os
+    @st.cache_resource
+    def load_pretrained_model(path="lightfm_model.pkl"):
+        if os.path.exists(path):
+            try:
+                bundle = joblib.load(path)
+                return (
+                    bundle["model"],
+                    bundle["mapping"],
+                    bundle["item_feats"],
+                    bundle["user_feats"],
+                )
+            except Exception as e:
+                st.error(f"❌ Failed to load pretrained model: {e}")
+        return None, None, None, None
+
     # --- Train Button ---
     if st.button("Train Model"):
         with st.spinner("Training LightFM model... ⏳"):
@@ -495,7 +513,15 @@ Metrics reported:
                     "fan_boost": fan_boost
                 })
 
-                # Evaluate
+                # Save locally
+                joblib.dump({
+                    "model": model,
+                    "mapping": mapping,
+                    "item_feats": item_feats,
+                    "user_feats": user_feats
+                }, "lightfm_model.pkl")
+
+                # Evaluate immediately
                 hit, precision, ndcg = evaluate(
                     model, df_validation, mapping, round_sched,
                     item_feats, user_feats
@@ -507,9 +533,32 @@ Metrics reported:
             except Exception as e:
                 st.error(f"❌ Training failed: {e}")
 
-    # --- Model Not Trained Yet ---
+    # --- Load Pretrained Button ---
+    if st.button("Load Pretrained Model"):
+        model, mapping, item_feats, user_feats = load_pretrained_model()
+        if model:
+            st.session_state.update({
+                "model": model,
+                "mapping": mapping,
+                "item_feats": item_feats,
+                "user_feats": user_feats
+            })
+
+            # Evaluate after loading
+            hit, precision, ndcg = evaluate(
+                model, df_validation, mapping, round_sched,
+                item_feats, user_feats
+            )
+            st.success(
+                f"✅ Pretrained Model Loaded → "
+                f"Hit@3={hit:.2%}, Precision@3={precision:.2%}, NDCG={ndcg:.2f}"
+            )
+        else:
+            st.warning("⚠️ No pretrained model found. Train it first to create lightfm_model.pkl.")
+
+    # --- Model Not Trained/Loaded Yet ---
     if "model" not in st.session_state:
-        st.info("⚠️ Train a model first to unlock recommendations and analytics.")
+        st.info("⚠️ Train or load a model to unlock recommendations and analytics.")
 
     # --- Hyperparameter Tuning ---
     st.markdown("---")
@@ -1122,4 +1171,5 @@ Analyze betting behavior from different marketing perspectives:
                 st.write(resp.choices[0].message.content)
             except Exception as e:
                 st.error(f"❌ Chatbot failed: {e}")
+
 
