@@ -458,7 +458,6 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # --- TAB 1: Train & Evaluate ---
-# --- TAB 1: Train & Evaluate ---
 with tab1:
     st.subheader("⚙️ Train Model")
     st.markdown("""
@@ -481,16 +480,16 @@ Metrics reported:
     components = st.selectbox("Latent Dimensions", [32, 64, 128], index=0)
 
     alpha = st.slider("Alpha (CF vs Popularity)", 0.5, 0.9, 0.7)
-    st.caption("📌 Balance between collaborative filtering and global popularity")
+    st.caption(" Balance between collaborative filtering and global popularity")
 
     star_boost = st.slider("Star Boost", 0.0, 0.5, 0.2)
-    st.caption("📌 Extra weight for games with marquee players")
+    st.caption(" Extra weight for games with superstars")
 
     fan_boost = st.slider("BigFan Boost", 0.0, 0.5, 0.2)
-    st.caption("📌 Extra weight for bettors who follow many games")
+    st.caption(" Extra weight for bettors who follow the same games")
 
     epochs = st.slider("Epochs", 10, 100, 30, step=10)
-    st.caption("📌 More epochs = better learning, but longer training")
+    st.caption(" More epochs = better learning, but longer training")
 
     # --- Cached Training Function ---
     @st.cache_resource
@@ -582,7 +581,7 @@ Metrics reported:
 
     # --- Hyperparameter Tuning ---
     st.markdown("---")
-    st.subheader("🔎 Hyperparameter Tuning")
+    st.subheader("Hyperparameter Tuning")
 
     if st.button("Run Hyperparameter Tuning"):
         search_space = {
@@ -634,7 +633,7 @@ Metrics reported:
 
     # --- Why This Model Section ---
     st.markdown("---")
-    st.subheader("📌 Why This Model?")
+    st.subheader("Why This Model?")
     st.markdown("""
 We chose **LightFM with WARP/BPR loss** because it’s a **hybrid recommender system**:  
 - It combines **collaborative filtering** (learning from historical player–game interactions) with **content-based features** (teams, regions, star players).  
@@ -649,7 +648,7 @@ In short: this model balances **accuracy, scalability, and explainability**, mak
 """)
     # --- Assumptions Section ---
     st.markdown("---")
-    st.subheader("📌 Key Assumptions")
+    st.subheader("Key Assumptions")
     st.markdown("""
 To keep the recommender realistic and focused, we make several **assumptions** in this implementation:
 
@@ -677,17 +676,15 @@ These assumptions ensure the model stays **practical, interpretable, and aligned
 """)
 
 
-
-# --- Tab 2: Player Explorer ---
 # --- TAB 2: Player Explorer ---
 with tab2:
     st.subheader("🎯 Player Explorer")
     st.markdown("""
-### 🔎 About this Tab
+#### About this Tab
 Explore **personalized recommendations** for individual players (`mask_id`).  
 
 - Select a player from the dropdown.  
-- Click **Run Recommendations** to generate the **Top 3 suggested games**.  
+- Click **Run Recommendations** to generate the **Top 3 suggested games** with scores.  
 - Recommendations are restricted to the **selected playoff round**.  
 - Compare recommendations against the player's **actual bets**.  
 - View **historical betting behavior** and **team loyalty**.  
@@ -735,6 +732,7 @@ Explore **personalized recommendations** for individual players (`mask_id`).
                             playoff_schedule["game_norm"], playoff_schedule["game"]
                         ))
                         rec_games = [norm_to_pretty.get(g, g) for g, _ in recs]
+                        rec_scores = [s for _, s in recs]
 
                         # Actual bets
                         actual_games = df_validation.loc[
@@ -752,18 +750,25 @@ Explore **personalized recommendations** for individual players (`mask_id`).
                         st.session_state.update({
                             "last_uid": uid,
                             "last_recs": rec_games,
+                            "last_scores": rec_scores,
                             "last_actual": actual_pretty,
                             "last_segment": segment,
                             "last_region_loyalty": region_loyalty
                         })
+
             except Exception as e:
                 st.error(f"❌ Recommendation failed: {e}")
 
         # --- Show Recommendations ---
         if "last_recs" in st.session_state:
-            st.markdown(f"**Top {round_choice} Recommendations for mask_id {st.session_state['last_uid']}:**")
-            for g in st.session_state["last_recs"]:
-                st.write(f"👉 {g}")
+            st.markdown(
+                f"**Top {round_choice} Recommendations for mask_id {st.session_state['last_uid']}:**"
+            )
+            rec_df = pd.DataFrame({
+                "Game": st.session_state["last_recs"],
+                "Score": st.session_state.get("last_scores", [])
+            })
+            st.dataframe(rec_df)
 
         # --- Show Actual Bets ---
         if "last_actual" in st.session_state:
@@ -888,21 +893,11 @@ Explore **personalized recommendations** for individual players (`mask_id`).
             st.write(st.session_state["last_explanation"])
 
 
-
-
-
-
-
-
-
-
-
-# --- Tab 3: Simulation ---
 # --- TAB 3: Simulation ---
 with tab3:
     st.subheader("📅 Simulation: Series-Level Performance")
     st.markdown("""
-### 🔎 About this Tab
+####  About this Tab
 Simulate **series-level betting performance** by comparing:  
 
 - ✅ **Actual players** who bet on each series in the validation set  
@@ -999,27 +994,22 @@ It helps validate whether the model captures **collective betting behavior** at 
             st.error(f"❌ Simulation failed: {e}")
 
 
-
-
-
-# --- Tab 4: Marketing Analytics ---
-# --- Tab 4: Marketing Analytics ---
 # --- TAB 4: Marketing Analytics ---
 with tab4:
     st.subheader("📊 Marketing Analytics")
     st.markdown("""
-### 🔎 About this Tab
+####  About this Tab
 Analyze betting behavior from different marketing perspectives:  
 
-- 💰 **Top Wagered Teams & Players**  
-- 👥 **Segment Preferences** (Low, Medium, High activity)  
-- 🔀 **Pre-Playoff → Playoff Betting Flow** (team loyalty transitions)  
-- 🔥 **Most Anticipated Game** for R8  
-- 🤖 **AI Marketing Chatbot** for ad-hoc insights  
+- **Top Wagered Teams & Players**  
+- **Segment Preferences** (Low, Medium, High activity)  
+- **Pre-Playoff → Playoff Betting Flow** (team loyalty transitions)  
+- **Most Anticipated Game** for R8  
+- **AI Marketing Chatbot** for ad-hoc insights  
 """)
 
     # --- Top charts ---
-    st.markdown("### 💰 Top Wagered Teams & Star Players")
+    st.markdown("####  Top Wagered Teams & Star Players")
     try:
         team_wagers = (
             df_train.explode("teams")
@@ -1044,7 +1034,7 @@ Analyze betting behavior from different marketing perspectives:
 
     # --- Segment preferences ---
     st.markdown("---")
-    st.subheader("👥 Segment Preferences")
+    st.subheader(" Segment Preferences")
     try:
         seg_df = df_train.merge(
             pd.Series(player_segments, name="segment"),
@@ -1059,14 +1049,14 @@ Analyze betting behavior from different marketing perspectives:
             .unstack(fill_value=0)
         )
 
-        st.write("### Activity Segments (Low / Medium / High)")
+        st.write("#### Activity Segments (Low / Medium / High)")
         st.bar_chart(seg_prefs.loc[:, seg_prefs.columns.isin(big_market_teams)].T)
     except Exception as e:
         st.error(f"❌ Segment analysis failed: {e}")
 
     # --- Pre-Playoff → Playoff Betting Flow ---
     st.markdown("---")
-    st.subheader("🔀 Pre-Playoff → Playoff Betting Flow")
+    st.subheader(" Pre-Playoff → Playoff Betting Flow")
     try:
         # Collect playoff teams
         playoff_teams = set()
@@ -1107,12 +1097,11 @@ Analyze betting behavior from different marketing perspectives:
         ax.set_title("Pre-Playoff → Playoff Betting Likelihoods")
         st.pyplot(fig)
     except Exception as e:
-        st.error(f"❌ Pre-Playoff → Playoff flow failed: {e}")
+        st.error(f" Pre-Playoff → Playoff flow failed: {e}")
 
-    # --- Most Anticipated Game (R8) ---
-    # --- Most Anticipated Game (R8) ---
+  # --- Most Anticipated Game (R8) ---
     st.markdown("---")
-    st.subheader("🔥 Most Anticipated Game (R8)")
+    st.subheader(" Most Anticipated Game (R8)")
     try:
         r8_sched = playoff_schedule[playoff_schedule["round"] == "R8"]
 
@@ -1170,26 +1159,25 @@ Analyze betting behavior from different marketing perspectives:
         else:
             st.info("ℹ️ No R8 series found in schedule or model not trained.")
     except Exception as e:
-        st.error(f"❌ R8 analysis failed: {e}")
+        st.error(f" R8 analysis failed: {e}")
 
-        # --- Marketing Chatbot ---
-        st.markdown("---")
-        st.subheader("🤖 Marketing Analytics Chatbot")
-        query = st.text_input("Ask a marketing question (e.g., Which team has the most loyal bettors?)")
+    st.markdown("---")
+    st.subheader(" Marketing Analytics Chatbot")
+    query = st.text_input("Ask a marketing question (e.g., Which team has the most loyal bettors?)")
 
-        if query and "model" in st.session_state:
-            try:
-                resp = client.chat.completions.create(
-                    model="gpt-35-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a marketing analytics assistant for NBA betting insights."},
-                        {"role": "user", "content": query}
-                    ],
-                    max_tokens=400
-                )
-                st.markdown("### 📝 AI Marketing Insight")
-                st.write(resp.choices[0].message.content)
-            except Exception as e:
-                st.error(f"❌ Chatbot failed: {e}")
+    if query and "model" in st.session_state:
+        try:
+            resp = client.chat.completions.create(
+                model="gpt-35-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a marketing analytics assistant for NBA betting insights."},
+                    {"role": "user", "content": query}
+                ],
+                max_tokens=400
+            )
+            st.markdown("### 📝 AI Marketing Insight")
+            st.write(resp.choices[0].message.content)
+        except Exception as e:
+            st.error(f" Chatbot failed: {e}")
 
 
