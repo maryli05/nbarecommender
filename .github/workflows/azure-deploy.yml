@@ -1,0 +1,40 @@
+name: Azure WebApp Deploy
+
+on:
+  push:
+    branches:
+      - main   # 👈 or your default branch
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout repo
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Setup Python
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      # Install dependencies (optional — just to confirm build works)
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Add delay to avoid SCM restart conflicts
+      - name: Delay before deploy
+        run: sleep 20
+
+      # Deploy with ZipDeploy
+      - name: Deploy to Azure WebApp
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: nbarecommender   # 👈 must match your Azure App Service name
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: .
+          type: zip
