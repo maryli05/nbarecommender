@@ -423,74 +423,75 @@ round_sched = playoff_schedule[playoff_schedule["round"] == round_choice]
 # -----------------------------
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "⚙️ Train & Evaluate", "🎯 Player Explorer", "📅 Simulation",
-    "📊 Dashboard", "🤖 Chatbot"
+    "📊 Dashboard"
 ])
 
 with tab1:
     st.subheader("⚙️ Train Model")
     st.markdown("""
 #### About this Tab
-
 This section lets you **train and evaluate** the recommender model.  
 You can experiment with different model settings and instantly see how they affect recommendation quality.
 
-- Use the sliders to adjust **model hyperparameters**.  
+- Adjust **model hyperparameters** (loss, latent dimensions, epochs).  
 - Apply **boost factors** (Star Boost, BigFan Boost).  
 
-The evaluation is **restricted to the selected playoff round** (e.g., R8, Quarterfinals).  
-That means metrics are calculated **only for players who actually placed bets in that round**, ensuring the results reflect real betting behavior.  
-
-The system reports three key metrics:
-- **Hit@3** → Did at least one of the player’s bets appear in the top 3 recommendations?  
-- **Precision@3** → On average, what fraction of the top 3 recommendations were correct bets?  
-- **NDCG** → How well were the correct bets ranked, with higher positions weighted more.  
-
-Together, these metrics provide both a **coverage view (Hit Rate)** and a **ranking quality view (Precision, NDCG)**, helping you compare trade-offs across hyperparameter settings.
+Evaluation is restricted to the **selected playoff round** (e.g., R8, Quarterfinals).  
+Metrics reported:
+- **Hit@3** → At least one of the player's actual bets appears in the Top-3 recs  
+- **Precision@3** → Fraction of the Top-3 recs that are correct  
+- **NDCG** → Ranking quality (higher = better ordering)  
 """)
 
-    # --- Sliders ---
-    loss = st.selectbox("Loss Function", ["warp", "bpr"])
+    # --- Hyperparameter controls ---
+    loss = st.selectbox("Loss Function", ["warp", "bpr"], index=0)
     components = st.selectbox("Latent Dimensions", [32, 64, 128], index=0)
 
     alpha = st.slider("Alpha (CF vs Popularity)", 0.5, 0.9, 0.7)
-    st.caption("📌 Balance between personal history and global popularity")
+    st.caption("📌 Balance between collaborative filtering and global popularity")
 
     star_boost = st.slider("Star Boost", 0.0, 0.5, 0.2)
-    st.caption("📌 Boost games with marquee players")
+    st.caption("📌 Extra weight for games with marquee players")
 
     fan_boost = st.slider("BigFan Boost", 0.0, 0.5, 0.2)
-    st.caption("📌 Boost for bettors who follow many games")
+    st.caption("📌 Extra weight for bettors who follow many games")
 
-    epochs = st.slider("Epochs", 10, 100, 30, 10)
-    st.caption("📌 More epochs = better learning but longer training")
+    epochs = st.slider("Epochs", 10, 100, 30, step=10)
+    st.caption("📌 More epochs = better learning, but longer training")
 
-    # --- Train with current settings ---
+    # --- Train button ---
     if st.button("Train Model"):
-        model, mapping, item_feats, user_feats = train_model(
-            df_train, loss=loss, comps=components, epochs=epochs
-        )
+        with st.spinner("Training LightFM model... ⏳"):
+            try:
+                model, mapping, item_feats, user_feats = train_model(
+                    df_train, loss=loss, comps=components, epochs=epochs
+                )
 
-        # now evaluate with all 3 metrics
-        hit, precision, ndcg = evaluate(
-            model, df_validation, mapping, round_sched,
-            item_feats, user_feats
-        )
+                # Save to session state
+                st.session_state.update({
+                    "model": model,
+                    "mapping": mapping,
+                    "item_feats": item_feats,
+                    "user_feats": user_feats,
+                    "alpha": alpha,
+                    "star_boost": star_boost,
+                    "fan_boost": fan_boost
+                })
 
-        st.success(
-            f"✅ Trained Model on {round_choice} → "
-            f"Hit@3={hit:.2%}, Precision@3={precision:.2%}, NDCG={ndcg:.2f}"
-        )
+                # Evaluate immediately
+                hit, precision, ndcg = evaluate(
+                    model, df_validation, mapping, round_sched, item_feats, user_feats
+                )
+                st.success(
+                    f"✅ Trained Model → Hit@3={hit:.2%}, "
+                    f"Precision@3={precision:.2%}, NDCG={ndcg:.2f}"
+                )
+            except Exception as e:
+                st.error(f"Training failed: {e}")
 
-        # Store in session for later tabs
-        st.session_state.update(dict(
-            model=model,
-            mapping=mapping,
-            item_feats=item_feats,
-            user_feats=user_feats,
-            alpha=alpha,
-            star_boost=star_boost,
-            fan_boost=fan_boost
-        ))
+    # If no model yet
+    if "model" not in st.session_state:
+        st.info("⚠️ Train a model first to unlock recommendations and analytics.")
 
     # --- Hyperparameter tuning ---
     st.markdown("---")
@@ -506,119 +507,130 @@ Together, these metrics provide both a **coverage view (Hit Rate)** and a **rank
         }
 
         results = []
-        for l in search_space["loss"]:
-            for comp in search_space["components"]:
-                for ep in search_space["epochs"]:
-                    model, mapping, item_feats, user_feats = train_model(
-                        df_train, loss=l, comps=comp, epochs=ep
-                    )
-                    for sb in search_space["star_boost"]:
-                        for fb in search_space["fan_boost"]:
-                            hit, prec, ndcg = evaluate(
-                                model, df_validation, mapping, round_sched,
-                                item_feats, user_feats
-                            )
-                            results.append({
-                                "Loss": l,
-                                "Dims": comp,
-                                "Epochs": ep,
-                                "StarBoost": sb,
-                                "FanBoost": fb,
-                                "Hit@3": hit,
-                                "Precision@3": prec,
-                                "NDCG": ndcg
-                            })
+        try:
+            for l in search_space["loss"]:
+                for comp in search_space["components"]:
+                    for ep in search_space["epochs"]:
+                        model, mapping, item_feats, user_feats = train_model(
+                            df_train, loss=l, comps=comp, epochs=ep
+                        )
+                        for sb in search_space["star_boost"]:
+                            for fb in search_space["fan_boost"]:
+                                hit, prec, ndcg = evaluate(
+                                    model, df_validation, mapping, round_sched,
+                                    item_feats, user_feats
+                                )
+                                results.append({
+                                    "Loss": l,
+                                    "Dims": comp,
+                                    "Epochs": ep,
+                                    "StarBoost": sb,
+                                    "FanBoost": fb,
+                                    "Hit@3": hit,
+                                    "Precision@3": prec,
+                                    "NDCG": ndcg
+                                })
 
-        results_df = pd.DataFrame(results).sort_values("NDCG", ascending=False)
-        st.dataframe(results_df)
+            results_df = pd.DataFrame(results).sort_values("NDCG", ascending=False)
+            st.dataframe(results_df)
 
-        best = results_df.iloc[0]
-        st.success(
-            f"🏆 Best: Loss={best['Loss']}, Dims={best['Dims']}, Epochs={best['Epochs']}, "
-            f"StarBoost={best['StarBoost']}, FanBoost={best['FanBoost']} → "
-            f"Hit@3={best['Hit@3']:.2%}, Precision@3={best['Precision@3']:.2%}, NDCG={best['NDCG']:.2f}"
-        )
+            best = results_df.iloc[0]
+            st.success(
+                f"🏆 Best Config → Loss={best['Loss']}, Dims={best['Dims']}, "
+                f"Epochs={best['Epochs']}, StarBoost={best['StarBoost']}, "
+                f"FanBoost={best['FanBoost']} → "
+                f"Hit@3={best['Hit@3']:.2%}, Precision@3={best['Precision@3']:.2%}, "
+                f"NDCG={best['NDCG']:.2f}"
+            )
+        except Exception as e:
+            st.error(f"Tuning failed: {e}")
+
 
 # --- Tab 2: Player Explorer ---
 with tab2:
     st.subheader("🎯 Player Explorer")
     st.markdown("""
 ### 🔎 About this Tab
-
-This section lets you **explore personalized recommendations** for individual players (identified by `mask_id`).  
+Explore **personalized recommendations** for individual players (`mask_id`).  
 
 - Select a player from the dropdown.  
-- Click **Run Recommendations** to generate the **Top 3 suggested games** for that player.  
-- Recommendations are restricted to the **selected playoff round** (e.g., R8, Quarterfinals).  
-- You can also see the **player's actual bets** from validation data.  
-- Finally, ask the **AI Explainer** why these games were recommended.
+- Click **Run Recommendations** to generate the **Top 3 suggested games**.  
+- Recommendations are restricted to the **selected playoff round**.  
+- Compare recommendations against the player's **actual bets**.  
+- View **historical betting behavior** and **team loyalty**.  
+- Ask the **AI Explainer** why these games were recommended.
 """)
 
-    if "model" in st.session_state:
-        uid = st.selectbox("Input mask_id", df_validation["mask_id"].unique())
+    # --- Require model ---
+    if "model" not in st.session_state:
+        st.warning("⚠️ Train a model first in the 'Train & Evaluate' tab.")
+    else:
+        uid = st.selectbox("Select mask_id", df_validation["mask_id"].unique())
 
+        # --- Run Recommendations ---
         if st.button("Run Recommendations"):
-            mask_map, _, game_map, game_rev = (
-                st.session_state["mapping"][0],
-                st.session_state["mapping"][1],
-                st.session_state["mapping"][2],
-                {v: k for k, v in st.session_state["mapping"][2].items()}
-            )
+            try:
+                mask_map, _, game_map, game_rev = (
+                    st.session_state["mapping"][0],
+                    st.session_state["mapping"][1],
+                    st.session_state["mapping"][2],
+                    {v: k for k, v in st.session_state["mapping"][2].items()}
+                )
 
-            if uid in mask_map:
-                uidx = mask_map[uid]
-                round_games = round_sched["game_norm"].unique()
-                gidx = [game_map[g] for g in round_games if g in game_map]
+                if uid in mask_map:
+                    uidx = mask_map[uid]
+                    round_games = round_sched["game_norm"].unique()
+                    gidx = [game_map[g] for g in round_games if g in game_map]
 
-                if gidx:
-                    scores = st.session_state["model"].predict(
-                        uidx, gidx,
-                        item_features=st.session_state["item_feats"],
-                        user_features=st.session_state["user_feats"]
-                    )
-                    recs = sorted(
-                        [(game_rev[i], s) for i, s in zip(gidx, scores)],
-                        key=lambda x: x[1],
-                        reverse=True
-                    )[:3]
+                    if gidx:
+                        scores = st.session_state["model"].predict(
+                            uidx, gidx,
+                            item_features=st.session_state["item_feats"],
+                            user_features=st.session_state["user_feats"]
+                        )
+                        recs = sorted(
+                            [(game_rev[i], s) for i, s in zip(gidx, scores)],
+                            key=lambda x: x[1],
+                            reverse=True
+                        )[:3]
 
-                    # Pretty mapping
-                    norm_to_pretty = dict(zip(
-                        playoff_schedule["game_norm"], 
-                        playoff_schedule["game"]
-                    ))
-                    rec_games = [norm_to_pretty.get(g, g) for g, _ in recs]
+                        # Map back to human-readable names
+                        norm_to_pretty = dict(zip(
+                            playoff_schedule["game_norm"],
+                            playoff_schedule["game"]
+                        ))
+                        rec_games = [norm_to_pretty.get(g, g) for g, _ in recs]
 
-                    # 🎯 Actual bets
-                    actual_games = df_validation.loc[
-                        df_validation["mask_id"] == uid, "game_norm"
-                    ].unique()
-                    actual_pretty = [norm_to_pretty.get(g, g) for g in actual_games if g in norm_to_pretty]
+                        # Actual bets
+                        actual_games = df_validation.loc[
+                            df_validation["mask_id"] == uid, "game_norm"
+                        ].unique()
+                        actual_pretty = [norm_to_pretty.get(g, g) for g in actual_games if g in norm_to_pretty]
 
-                    # Player segment
-                    segment = player_segments.get(uid, "Unknown")
+                        # Player segment + regional loyalty
+                        segment = player_segments.get(uid, "Unknown")
+                        user_feats_dict = dict(build_user_features(df_train))
+                        loyalty = [f for f in user_feats_dict.get(uid, []) if f.startswith("Region_Loyalty_")]
+                        region_loyalty = loyalty[0] if loyalty else "None"
 
-                    # 🆕 Regional loyalty (from user features)
-                    user_feats_dict = dict(build_user_features(df_train))
-                    loyalty = [f for f in user_feats_dict.get(uid, []) if f.startswith("Region_Loyalty_")]
-                    region_loyalty = loyalty[0] if loyalty else "None"
+                        # Save in session
+                        st.session_state.update({
+                            "last_uid": uid,
+                            "last_recs": rec_games,
+                            "last_actual": actual_pretty,
+                            "last_segment": segment,
+                            "last_region_loyalty": region_loyalty
+                        })
+            except Exception as e:
+                st.error(f"Recommendation failed: {e}")
 
-                    # ✅ Save in session state
-                    st.session_state.update({
-                        "last_uid": uid,
-                        "last_recs": rec_games,
-                        "last_actual": actual_pretty,
-                        "last_segment": segment,
-                        "last_region_loyalty": region_loyalty
-                    })
-
-        # --- Show recommendations ---
+        # --- Show Recommendations ---
         if "last_recs" in st.session_state:
             st.write(f"**Top {round_choice} Recommendations for mask_id {st.session_state['last_uid']}:**")
             for g in st.session_state["last_recs"]:
                 st.write(f"👉 {g}")
 
-        # --- Show actual bets (highlighted) ---
+        # --- Show Actual Bets ---
         if "last_actual" in st.session_state:
             st.write(f"**Actual Bets in Validation for mask_id {st.session_state['last_uid']}:**")
             if st.session_state["last_actual"]:
@@ -633,19 +645,16 @@ This section lets you **explore personalized recommendations** for individual pl
 
             if not player_history.empty:
                 st.markdown("### 📈 Historical Betting Behaviour (Training Data)")
-                
-                # Detect date column
-                date_col = None
-                for cand in ["betdate", "purchasedate", "date", "transaction_date", "event_date"]:
-                    if cand in player_history.columns:
-                        date_col = cand
-                        break
+
+                # Detect possible date column
+                date_col = next(
+                    (c for c in ["betdate", "purchasedate", "date", "transaction_date", "event_date"]
+                     if c in player_history.columns),
+                    None
+                )
 
                 if date_col:
-                    # Ensure datetime
                     player_history[date_col] = pd.to_datetime(player_history[date_col], errors="coerce")
-
-                    # Group by month
                     history_counts = (
                         player_history.groupby(player_history[date_col].dt.to_period("M"))
                         .size()
@@ -654,12 +663,8 @@ This section lets you **explore personalized recommendations** for individual pl
                     history_counts[date_col] = history_counts[date_col].astype(str)
                     st.line_chart(history_counts.set_index(date_col)["bets"])
 
-                # --- Top 3 favourite teams ---
-                norm_to_pretty = dict(zip(
-                    playoff_schedule["game_norm"], 
-                    playoff_schedule["game"]
-                ))
-
+                # Top 3 favourite teams
+                norm_to_pretty = dict(zip(playoff_schedule["game_norm"], playoff_schedule["game"]))
                 team_counts = []
                 for g in player_history["game_norm"]:
                     pretty = norm_to_pretty.get(g, g)
@@ -670,13 +675,10 @@ This section lets you **explore personalized recommendations** for individual pl
                 if team_counts:
                     st.markdown("### 🏀 Top 3 Teams This Player Bets On")
                     top3 = pd.Series(team_counts).value_counts().head(3)
-
-                    # Show overall totals
                     for team, count in top3.items():
                         st.markdown(f"- **{team}**: {count} bets")
 
-                    # --- Monthly stacked trend for Top 3 ---
-                    st.markdown("### 📊 Monthly Trend for Top 3 Teams")
+                    # Monthly stacked trend
                     team_history = []
                     for g, d in zip(player_history["game_norm"], player_history[date_col]):
                         pretty = norm_to_pretty.get(g, g)
@@ -698,13 +700,11 @@ This section lets you **explore personalized recommendations** for individual pl
                             index="month", columns="team", values="bets"
                         ).fillna(0)
 
-                        # Normalize to percentages for stacked share
+                        # Normalize to % shares
                         team_trend_norm = team_trend_pivot.div(team_trend_pivot.sum(axis=1), axis=0)
-
                         st.area_chart(team_trend_norm)
                 else:
-                    st.info("No team associations found for this player's betting history.")
-
+                    st.info("No team associations found in this player's betting history.")
             else:
                 st.info("No historical bets found for this player in training data.")
 
@@ -718,35 +718,35 @@ This section lets you **explore personalized recommendations** for individual pl
 
             prompt = f"""
             Player {st.session_state['last_uid']} is segmented as a **{segment}** bettor.
+            They were recommended: {", ".join(rec_games)}.
+            Their favorite team: {fav_team}.
+            Regional loyalty: {region_loyalty}.
+            Actual bets: {", ".join(actual_games) if actual_games else "None"}.
 
-            They were recommended these games: {", ".join(rec_games)}.
-            Their favorite team is {fav_team}.
-            Their regional loyalty is {region_loyalty}.
-            They actually bet on: {", ".join(actual_games) if actual_games else "No bets in validation"}.
-
-            Please explain why these games are relevant to this player based on:
-            - their favorite team,
-            - familiar teams,
-            - rivalries,
-            - market size,
-            - their regional loyalty ({region_loyalty}),
-            - and typical behaviors of {segment} bettors.
-            Also compare the recommendations against the actual bets they made.
+            Explain why these games are relevant based on:
+            - Favorite & familiar teams
+            - Rivalries
+            - Market size
+            - Regional loyalty
+            - Typical behavior of {segment} bettors
+            Compare recommendations vs. actual bets.
             """
 
-            resp = client.chat.completions.create(
-                model="gpt-35-turbo",
-                messages=[
-                    {"role": "system", "content": "You are an NBA betting recommender explainer bot."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=400
-            )
+            try:
+                resp = client.chat.completions.create(
+                    model="gpt-35-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are an NBA betting recommender explainer bot."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=400
+                )
+                msg = resp.choices[0].message
+                content = msg["content"] if isinstance(msg, dict) else msg.content
+                st.session_state["last_explanation"] = content
+            except Exception as e:
+                st.error(f"AI explanation failed: {e}")
 
-            msg = resp.choices[0].message
-            content = msg["content"] if isinstance(msg, dict) else msg.content
-            st.session_state["last_explanation"] = content
-        
         if "last_explanation" in st.session_state:
             st.markdown("### 🤖 AI Explanation")
             st.write(st.session_state["last_explanation"])
@@ -759,235 +759,307 @@ This section lets you **explore personalized recommendations** for individual pl
 
 
 
+
 # --- Tab 3: Simulation ---
 with tab3:
     st.subheader("📅 Simulation: Series-Level Performance")
+    st.markdown("""
+### 🔎 About this Tab
+Simulate **series-level betting performance** by comparing:  
 
-    if "model" in st.session_state:
-        # --- Prepare mappings ---
-        mask_map, _, game_map, game_rev = (
-            st.session_state["mapping"][0],
-            st.session_state["mapping"][1],
-            st.session_state["mapping"][2],
-            {v: k for k, v in st.session_state["mapping"][2].items()}
-        )
+- ✅ **Actual players** who bet on each series in the validation set  
+- 🤖 **Predicted players** based on Top-5 recommendations  
 
-        norm_to_pretty = dict(zip(playoff_schedule["game_norm"], playoff_schedule["game"]))
+This simulation is **restricted to the selected playoff round** (e.g., R8, Quarterfinals).  
+It helps validate whether the model captures **collective betting behavior** at the series level.
+""")
 
-        # --- Restrict to round games only ---
-        round_games = round_sched["game_norm"].unique()
-        round_games = [g for g in round_games if g in game_map]  # drop games not in model
-
-        # --- Build Top 5 recommendations for each player ---
-        pred_records = []
-        for uid in df_validation["mask_id"].unique():
-            if uid not in mask_map:
-                continue
-
-            uidx = mask_map[uid]
-            gidx = [game_map[g] for g in round_games]
-
-            if not gidx:
-                continue
-
-            scores = st.session_state["model"].predict(
-                uidx, gidx,
-                item_features=st.session_state["item_feats"],
-                user_features=st.session_state["user_feats"]
+    if "model" not in st.session_state:
+        st.warning("⚠️ Train a model first in the 'Train & Evaluate' tab.")
+    else:
+        try:
+            # --- Prepare mappings ---
+            mask_map, _, game_map, game_rev = (
+                st.session_state["mapping"][0],
+                st.session_state["mapping"][1],
+                st.session_state["mapping"][2],
+                {v: k for k, v in st.session_state["mapping"][2].items()}
             )
-            recs = sorted(
-                [(game_rev[i], s) for i, s in zip(gidx, scores)],
-                key=lambda x: x[1],
-                reverse=True
-            )[:5]
 
-            for g, _ in recs:
-                pretty = norm_to_pretty.get(g, g)
-                pred_records.append({"mask_id": uid, "series": pretty})
+            norm_to_pretty = dict(zip(
+                playoff_schedule["game_norm"],
+                playoff_schedule["game"]
+            ))
 
-        df_pred = pd.DataFrame(pred_records)
+            # --- Restrict to round games only ---
+            round_games = round_sched["game_norm"].unique()
+            round_games = [g for g in round_games if g in game_map]
 
-        # --- Actual bets for this round only ---
-        df_actual = df_validation.copy()
-        df_actual = df_actual[df_actual["game_norm"].isin(round_games)]
-        df_actual["series"] = df_actual["game_norm"].map(norm_to_pretty)
-        actual_counts = df_actual.groupby("series")["mask_id"].nunique().reset_index(name="actual_players")
+            pred_records = []
 
-        # --- Predicted counts ---
-        pred_counts = df_pred.groupby("series")["mask_id"].nunique().reset_index(name="predicted_players")
+            # --- Build Top-5 recommendations per player ---
+            for uid in df_validation["mask_id"].unique():
+                if uid not in mask_map:
+                    continue
 
-        # --- Combine ---
-        sim = pd.merge(actual_counts, pred_counts, on="series", how="outer").fillna(0)
+                uidx = mask_map[uid]
+                gidx = [game_map[g] for g in round_games if g in game_map]
 
-        st.markdown(f"""
-        Simulation restricted to **{round_choice}** series only.  
-        Metrics show **how many players actually bet** vs. **how many were predicted to bet (Top 5)**.
-        """)
+                if not gidx:
+                    continue
 
-        st.dataframe(sim)
-        st.bar_chart(sim.set_index("series")[["actual_players", "predicted_players"]])
+                scores = st.session_state["model"].predict(
+                    uidx, gidx,
+                    item_features=st.session_state["item_feats"],
+                    user_features=st.session_state["user_feats"]
+                )
+                recs = sorted(
+                    [(game_rev[i], s) for i, s in zip(gidx, scores)],
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:5]
+
+                for g, _ in recs:
+                    pretty = norm_to_pretty.get(g, g)
+                    pred_records.append({"mask_id": uid, "series": pretty})
+
+            df_pred = pd.DataFrame(pred_records)
+
+            # --- Actual bets for this round ---
+            df_actual = df_validation.copy()
+            df_actual = df_actual[df_actual["game_norm"].isin(round_games)]
+            df_actual["series"] = df_actual["game_norm"].map(norm_to_pretty)
+            actual_counts = (
+                df_actual.groupby("series")["mask_id"]
+                .nunique()
+                .reset_index(name="actual_players")
+            )
+
+            # --- Predicted counts ---
+            pred_counts = (
+                df_pred.groupby("series")["mask_id"]
+                .nunique()
+                .reset_index(name="predicted_players")
+            )
+
+            # --- Combine ---
+            sim = pd.merge(
+                actual_counts, pred_counts,
+                on="series", how="outer"
+            ).fillna(0)
+
+            sim = sim.sort_values("actual_players", ascending=False)
+
+            st.markdown(f"""
+            ✅ Simulation for **{round_choice}** round only.  
+            Compare actual vs. predicted bettors per series.  
+            """)
+
+            # --- Show Data ---
+            st.dataframe(sim)
+
+            # --- Visualization ---
+            st.bar_chart(sim.set_index("series")[["actual_players", "predicted_players"]])
+
+        except Exception as e:
+            st.error(f"Simulation failed: {e}")
 
 
 
 
 
 # --- Tab 4: Marketing Analytics ---
+# --- Tab 4: Marketing Analytics ---
 with tab4:
     st.subheader("📊 Marketing Analytics")
+    st.markdown("""
+### 🔎 About this Tab
+Analyze betting behavior from different marketing perspectives:  
+
+- 💰 **Top Wagered Teams & Players**  
+- 👥 **Segment Preferences** (Low, Medium, High activity)  
+- 🔀 **Pre-Playoff → Playoff Betting Flow** (team loyalty transitions)  
+- 🔥 **Most Anticipated Game** for R8  
+- 🤖 **AI Marketing Chatbot** for ad-hoc insights  
+""")
 
     # --- Top charts ---
     st.markdown("### 💰 Top Wagered Teams & Star Players")
+    try:
+        team_wagers = (
+            df_train.explode("teams")
+            .groupby("teams")["wager_amount"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(10)
+        )
+        st.bar_chart(team_wagers)
 
-    team_wagers = (
-        df_train.explode("teams")
-        .groupby("teams")["wager_amount"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(10)
-    )
-    st.bar_chart(team_wagers)
-
-    player_wagers = (
-        df_train.explode("star_players")
-        .dropna(subset=["star_players"])
-        .groupby("star_players")["wager_amount"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(10)
-    )
-    st.bar_chart(player_wagers)
+        player_wagers = (
+            df_train.explode("star_players")
+            .dropna(subset=["star_players"])
+            .groupby("star_players")["wager_amount"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(10)
+        )
+        st.bar_chart(player_wagers)
+    except Exception as e:
+        st.error(f"Failed to compute top wagers: {e}")
 
     # --- Segment preferences ---
     st.markdown("---")
     st.subheader("👥 Segment Preferences")
+    try:
+        seg_df = df_train.merge(
+            pd.Series(player_segments, name="segment"),
+            left_on="mask_id",
+            right_index=True,
+            how="left"
+        )
+        seg_prefs = (
+            seg_df.explode("teams")
+            .groupby(["segment", "teams"])
+            .size()
+            .unstack(fill_value=0)
+        )
 
-    seg_df = df_train.merge(
-        pd.Series(player_segments, name="segment"),
-        left_on="mask_id",
-        right_index=True,
-        how="left"
-    )
-    seg_prefs = seg_df.explode("teams").groupby(["segment", "teams"]).size().unstack(fill_value=0)
-
-    st.write("### Activity Segments (Low / Medium / High)")
-    st.bar_chart(seg_prefs.loc[:, seg_prefs.columns.isin(big_market_teams)].T)
+        st.write("### Activity Segments (Low / Medium / High)")
+        st.bar_chart(seg_prefs.loc[:, seg_prefs.columns.isin(big_market_teams)].T)
+    except Exception as e:
+        st.error(f"Segment analysis failed: {e}")
 
     # --- Pre-Playoff → Playoff Betting Flow ---
     st.markdown("---")
     st.subheader("🔀 Pre-Playoff → Playoff Betting Flow")
+    try:
+        playoff_teams = set()
+        for g in playoff_schedule["game"]:
+            playoff_teams.update([t.strip() for t in g.split("&")])
 
-    # Collect playoff teams
-    playoff_teams = set()
-    for g in playoff_schedule["game"]:
-        playoff_teams.update([t.strip() for t in g.split("&")])
+        # Pre-playoff bets
+        pre = df_train[["mask_id", "teams"]].explode("teams")
 
-    # Pre-playoff bets (include non-playoff like Raptors, Pistons, etc.)
-    pre = df_train[["mask_id", "teams"]].explode("teams")
+        # Playoff bets
+        post = df_validation[["mask_id", "teams"]].explode("teams")
+        post = post[post["teams"].isin(playoff_teams)]
 
-    # Playoff bets (restrict to playoff teams)
-    post = df_validation[["mask_id", "teams"]].explode("teams")
-    post = post[post["teams"].isin(playoff_teams)]
+        # Merge and count transitions
+        merged = pre.merge(post, on="mask_id", suffixes=("_pre", "_playoff"))
+        trans_counts = (
+            merged.groupby(["teams_pre", "teams_playoff"])
+            .size()
+            .reset_index(name="count")
+        )
 
-    # Merge pre vs playoff
-    merged = pre.merge(post, on="mask_id", suffixes=("_pre", "_playoff"))
+        # Pivot to heatmap
+        pivot = (
+            trans_counts.pivot(index="teams_pre", columns="teams_playoff", values="count")
+            .fillna(0)
+        )
 
-    # Count transitions
-    trans_counts = merged.groupby(["teams_pre", "teams_playoff"]).size().reset_index(name="count")
+        likelihood = pivot.div(pivot.sum(axis=1), axis=0)
 
-    # Pivot for heatmap
-    pivot = trans_counts.pivot(index="teams_pre", columns="teams_playoff", values="count").fillna(0)
+        st.write("### Transition Likelihoods (Pre-Playoff → Playoff)")
+        st.dataframe(likelihood.style.background_gradient(cmap="Blues"))
 
-    # Normalize likelihoods row-wise
-    likelihood = pivot.div(pivot.sum(axis=1), axis=0)
+        # Heatmap
+        import matplotlib.pyplot as plt
+        import seaborn as sns
 
-    st.write("### Transition Likelihoods (Pre-Playoff → Playoff)")
-    st.dataframe(likelihood.style.background_gradient(cmap="Blues"))
-
-    # Heatmap
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
-    fig, ax = plt.subplots(figsize=(12, 7))
-    sns.heatmap(likelihood, annot=False, cmap="Blues", ax=ax)
-    ax.set_title("Pre-Playoff → Playoff Betting Likelihoods")
-    st.pyplot(fig)
+        fig, ax = plt.subplots(figsize=(12, 7))
+        sns.heatmap(likelihood, annot=False, cmap="Blues", ax=ax)
+        ax.set_title("Pre-Playoff → Playoff Betting Likelihoods")
+        st.pyplot(fig)
+    except Exception as e:
+        st.error(f"Pre-Playoff → Playoff flow failed: {e}")
 
     # --- Most Anticipated Game (R8) ---
     st.markdown("---")
     st.subheader("🔥 Most Anticipated Game (R8)")
+    try:
+        r8_sched = playoff_schedule[playoff_schedule["round"] == "R8"]
 
-    r8_sched = playoff_schedule[playoff_schedule["round"] == "R8"]
+        if not r8_sched.empty and "model" in st.session_state:
+            norm_to_pretty = dict(zip(r8_sched["game_norm"], r8_sched["game"]))
+            results = []
 
-    if not r8_sched.empty and "model" in st.session_state:
-        norm_to_pretty = dict(zip(r8_sched["game_norm"], r8_sched["game"]))
-        results = []
+            mask_map, _, game_map, _ = (
+                st.session_state["mapping"][0],
+                st.session_state["mapping"][1],
+                st.session_state["mapping"][2],
+                {v: k for k, v in st.session_state["mapping"][2].items()}
+            )
 
-        mask_map, _, game_map, _ = (
-            st.session_state["mapping"][0],
-            st.session_state["mapping"][1],
-            st.session_state["mapping"][2],
-            {v: k for k, v in st.session_state["mapping"][2].items()}
-        )
-
-        for g in r8_sched["game_norm"].unique():
-            if g not in game_map:
-                continue
-            game_idx = game_map[g]
-
-            # Actual bettors
-            actual_players = set(df_validation.loc[df_validation["game_norm"] == g, "mask_id"].unique())
-
-            # Predicted bettors
-            predicted_players = set()
-            for uid in df_validation["mask_id"].unique():
-                if uid not in mask_map:
+            for g in r8_sched["game_norm"].unique():
+                if g not in game_map:
                     continue
-                uidx = mask_map[uid]
-                score = st.session_state["model"].predict(
-                    uidx, [game_idx],
-                    item_features=st.session_state["item_feats"],
-                    user_features=st.session_state["user_feats"]
-                )[0]
-                if score > 0:
-                    predicted_players.add(uid)
+                game_idx = game_map[g]
 
-            results.append({
-                "game": norm_to_pretty.get(g, g),
-                "actual_bettors": len(actual_players),
-                "predicted_bettors": len(predicted_players),
-                "gap": len(predicted_players) - len(actual_players)  # prediction error
-            })
+                # Actual bettors
+                actual_players = set(
+                    df_validation.loc[df_validation["game_norm"] == g, "mask_id"].unique()
+                )
 
-        results_df = pd.DataFrame(results).sort_values("actual_bettors", ascending=False)
+                # Predicted bettors
+                predicted_players = set()
+                for uid in df_validation["mask_id"].unique():
+                    if uid not in mask_map:
+                        continue
+                    uidx = mask_map[uid]
+                    score = st.session_state["model"].predict(
+                        uidx, [game_idx],
+                        item_features=st.session_state["item_feats"],
+                        user_features=st.session_state["user_feats"]
+                    )[0]
+                    if score > 0:
+                        predicted_players.add(uid)
 
-        top_game = results_df.iloc[0]
-        st.success(
-            f"🔥 The most anticipated R8 series is **{top_game['game']}** "
-            f"with {top_game['actual_bettors']} bettors (validation)."
-        )
+                results.append({
+                    "game": norm_to_pretty.get(g, g),
+                    "actual_bettors": len(actual_players),
+                    "predicted_bettors": len(predicted_players),
+                    "gap": len(predicted_players) - len(actual_players)
+                })
 
-        st.write("### Actual vs Predicted Bettors per R8 Series")
-        st.bar_chart(results_df.set_index("game")[["actual_bettors", "predicted_bettors"]])
+            results_df = pd.DataFrame(results).sort_values("actual_bettors", ascending=False)
 
-        st.write("### Prediction Gaps (Predicted - Actual)")
-        st.dataframe(results_df[["game", "actual_bettors", "predicted_bettors", "gap"]])
+            if not results_df.empty:
+                top_game = results_df.iloc[0]
+                st.success(
+                    f"🔥 The most anticipated R8 series is **{top_game['game']}** "
+                    f"with {top_game['actual_bettors']} bettors (validation)."
+                )
 
-    else:
-        st.info("No R8 series found in schedule or model not trained.")
+                st.write("### Actual vs Predicted Bettors per R8 Series")
+                st.bar_chart(results_df.set_index("game")[["actual_bettors", "predicted_bettors"]])
+
+                st.write("### Prediction Gaps (Predicted - Actual)")
+                st.dataframe(results_df[["game", "actual_bettors", "predicted_bettors", "gap"]])
+            else:
+                st.info("No valid R8 results to display.")
+        else:
+            st.info("No R8 series found in schedule or model not trained.")
+    except Exception as e:
+        st.error(f"R8 analysis failed: {e}")
 
     # --- Marketing Chatbot ---
     st.markdown("---")
     st.subheader("🤖 Marketing Analytics Chatbot")
-
     query = st.text_input("Ask a marketing question (e.g., Which team has the most loyal bettors?)")
+
     if query and "model" in st.session_state:
-        resp = client.chat.completions.create(
-            model="gpt-35-turbo",
-            messages=[
-                {"role": "system", "content": "You are a marketing analytics assistant for NBA betting insights."},
-                {"role": "user", "content": query}
-            ],
-            max_tokens=400
-        )
-        st.markdown("### 📝 AI Marketing Insight")
-        st.write(resp.choices[0].message.content)
+        try:
+            resp = client.chat.completions.create(
+                model="gpt-35-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a marketing analytics assistant for NBA betting insights."},
+                    {"role": "user", "content": query}
+                ],
+                max_tokens=400
+            )
+            st.markdown("### 📝 AI Marketing Insight")
+            st.write(resp.choices[0].message.content)
+        except Exception as e:
+            st.error(f"Chatbot failed: {e}")
+
