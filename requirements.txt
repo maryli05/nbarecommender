@@ -5,7 +5,7 @@ python-dotenv==1.0.0
 bcrypt==4.0.1
 PyYAML==6.0.1
 requests==2.31.0
-streamlit==1.30.0
+streamlit==1.37.0
 stripe==6.5.0
 PyJWT==2.8.0
 openai>=1.12.0
@@ -13,8 +13,8 @@ openpyxl
 
 # Core data/ML dependencies
 numpy
-pandas
-scikit-learn
+pandas==2.2.2
+scikit-learn==1.5.0
 matplotlib
 seaborn
 lightfm @ git+https://github.com/lyst/lightfm.git
