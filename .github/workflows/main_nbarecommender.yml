@@ -28,9 +28,9 @@ jobs:
       - name: Upgrade pip
         run: pip install --upgrade pip
 
-      # 👇 ADD THIS (system-level dependencies for LightFM & numpy/scipy)
+      # 👇 System-level dependencies required for LightFM & numpy/scipy
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential libopenblas-dev
+        run: sudo apt-get update && sudo apt-get install -y build-essential libopenblas-dev libomp-dev
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
@@ -64,5 +64,7 @@ jobs:
           app-name: 'nbarecommender'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_619B3FB2A3D44462AE060F124FFAC2DA }}
+
+
 
 
