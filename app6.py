@@ -124,23 +124,24 @@ def load_data():
 
     # Round mapping
     matchup_to_round = {
-        "Boston Celtics & Orlando Magic": "R8",
-        "Cleveland Cavaliers & Miami Heat": "R8",
-        "Denver Nuggets & Los Angeles Clippers": "R8",
-        "Detroit Pistons & New York Knicks": "R8",
-        "Golden State Warriors & Houston Rockets": "R8",
-        "Indiana Pacers & Milwaukee Bucks": "R8",
-        "Los Angeles Lakers & Minnesota Timberwolves": "R8",
-        "Memphis Grizzlies & Oklahoma City Thunder": "R8",
-        "Boston Celtics & New York Knicks": "Quarterfinals",
-        "Cleveland Cavaliers & Indiana Pacers": "Quarterfinals",
-        "Denver Nuggets & Oklahoma City Thunder": "Quarterfinals",
-        "Golden State Warriors & Minnesota Timberwolves": "Quarterfinals",
-        "Indiana Pacers & New York Knicks": "Semifinals",
-        "Minnesota Timberwolves & Oklahoma City Thunder": "Semifinals",
-        "Indiana Pacers & Oklahoma City Thunder": "Finals"
-    }
-    schedule["round"] = schedule["game"].map(matchup_to_round)
+    normalize_matchup("Boston Celtics & Orlando Magic"): "R8",
+    normalize_matchup("Cleveland Cavaliers & Miami Heat"): "R8",
+    normalize_matchup("Denver Nuggets & Los Angeles Clippers"): "R8",
+    normalize_matchup("Detroit Pistons & New York Knicks"): "R8",
+    normalize_matchup("Golden State Warriors & Houston Rockets"): "R8",
+    normalize_matchup("Indiana Pacers & Milwaukee Bucks"): "R8",
+    normalize_matchup("Los Angeles Lakers & Minnesota Timberwolves"): "R8",
+    normalize_matchup("Memphis Grizzlies & Oklahoma City Thunder"): "R8",
+    normalize_matchup("Boston Celtics & New York Knicks"): "Quarterfinals",
+    normalize_matchup("Cleveland Cavaliers & Indiana Pacers"): "Quarterfinals",
+    normalize_matchup("Denver Nuggets & Oklahoma City Thunder"): "Quarterfinals",
+    normalize_matchup("Golden State Warriors & Minnesota Timberwolves"): "Quarterfinals",
+    normalize_matchup("Indiana Pacers & New York Knicks"): "Semifinals",
+    normalize_matchup("Minnesota Timberwolves & Oklahoma City Thunder"): "Semifinals",
+    normalize_matchup("Indiana Pacers & Oklahoma City Thunder"): "Finals"
+}
+
+    schedule["round"] = schedule["game_norm"].map(matchup_to_round)
     return df_train, df_val, schedule
 
 
@@ -318,23 +319,43 @@ def simulate_series(df_val, model, mapping, round_sched, item_feats, user_feats)
 # Train Model
 # -----------------------------
 def train_model(df, loss="warp", comps=64, epochs=30):
+    # ✅ Include all playoff matchups (train + schedule)
+    all_items = pd.concat([
+        df["event_norm"],
+        playoff_schedule["game_norm"]
+    ]).unique()
+
     dataset = Dataset()
     dataset.fit(
         users=df["mask_id"].unique(),
-        items=df["event_norm"].unique(),
+        items=all_items,  # 👈 ensures playoff games are in the mapping
         item_features=[f for _, feats in build_item_features(df) for f in feats],
         user_features=[f for _, feats in build_user_features(df) for f in feats]
     )
+
+    # Interactions only from training
     interactions, weights = dataset.build_interactions(
         (r.mask_id, r.event_norm, r.wager_amount) for r in df.itertuples()
     )
+
+    # Features
     item_feats = dataset.build_item_features(build_item_features(df))
     user_feats = dataset.build_user_features(build_user_features(df))
+
+    # Train model
     model = LightFM(loss=loss, no_components=comps)
-    model.fit(interactions, item_features=item_feats, user_features=user_feats,
-              sample_weight=weights, epochs=epochs, num_threads=4)
+    model.fit(
+        interactions,
+        item_features=item_feats,
+        user_features=user_feats,
+        sample_weight=weights,
+        epochs=epochs,
+        num_threads=4
+    )
+
     mapping = dataset.mapping()
     return model, mapping, item_feats, user_feats
+
 
 
 # -----------------------------
@@ -745,24 +766,72 @@ with tab3:
     st.subheader("📅 Simulation: Series-Level Performance")
 
     if "model" in st.session_state:
-        sim = simulate_series(
-            df_validation,
-            st.session_state["model"],
-            st.session_state["mapping"],
-            round_sched,
-            st.session_state["item_feats"],
-            st.session_state["user_feats"]
+        # --- Prepare mappings ---
+        mask_map, _, game_map, game_rev = (
+            st.session_state["mapping"][0],
+            st.session_state["mapping"][1],
+            st.session_state["mapping"][2],
+            {v: k for k, v in st.session_state["mapping"][2].items()}
         )
+
+        norm_to_pretty = dict(zip(playoff_schedule["game_norm"], playoff_schedule["game"]))
+
+        # --- Restrict to round games only ---
+        round_games = round_sched["game_norm"].unique()
+        round_games = [g for g in round_games if g in game_map]  # drop games not in model
+
+        # --- Build Top 5 recommendations for each player ---
+        pred_records = []
+        for uid in df_validation["mask_id"].unique():
+            if uid not in mask_map:
+                continue
+
+            uidx = mask_map[uid]
+            gidx = [game_map[g] for g in round_games]
+
+            if not gidx:
+                continue
+
+            scores = st.session_state["model"].predict(
+                uidx, gidx,
+                item_features=st.session_state["item_feats"],
+                user_features=st.session_state["user_feats"]
+            )
+            recs = sorted(
+                [(game_rev[i], s) for i, s in zip(gidx, scores)],
+                key=lambda x: x[1],
+                reverse=True
+            )[:5]
+
+            for g, _ in recs:
+                pretty = norm_to_pretty.get(g, g)
+                pred_records.append({"mask_id": uid, "series": pretty})
+
+        df_pred = pd.DataFrame(pred_records)
+
+        # --- Actual bets for this round only ---
+        df_actual = df_validation.copy()
+        df_actual = df_actual[df_actual["game_norm"].isin(round_games)]
+        df_actual["series"] = df_actual["game_norm"].map(norm_to_pretty)
+        actual_counts = df_actual.groupby("series")["mask_id"].nunique().reset_index(name="actual_players")
+
+        # --- Predicted counts ---
+        pred_counts = df_pred.groupby("series")["mask_id"].nunique().reset_index(name="predicted_players")
+
+        # --- Combine ---
+        sim = pd.merge(actual_counts, pred_counts, on="series", how="outer").fillna(0)
 
         st.markdown(f"""
         Simulation restricted to **{round_choice}** series only.  
-        Metrics show **how many players actually bet** vs. **how many were predicted to bet** per playoff series.
+        Metrics show **how many players actually bet** vs. **how many were predicted to bet (Top 5)**.
         """)
 
         st.dataframe(sim)
-
-        # 🔥 Plot actual vs predicted
         st.bar_chart(sim.set_index("series")[["actual_players", "predicted_players"]])
+
+
+
+
 
 # --- Tab 4: Marketing Analytics ---
 with tab4:
