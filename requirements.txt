@@ -22,6 +22,10 @@ seaborn==0.13.2
 # Install LightFM from source (needs system libs)
 lightfm==1.17
 
+# 🚫 Block the conflicting SDK entirely
+azure-ai-openai==0.0.0
+
+
 
 
 
