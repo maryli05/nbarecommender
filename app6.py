@@ -426,24 +426,25 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Dashboard"
 ])
 
+# --- TAB 1: Train & Evaluate ---
 with tab1:
     st.subheader("⚙️ Train Model")
     st.markdown("""
 #### About this Tab
-This section lets you **train and evaluate** the recommender model.  
-You can experiment with different model settings and instantly see how they affect recommendation quality.
+This section lets you **train and evaluate** the recommender system.  
+Experiment with different hyperparameters and instantly see how they affect performance.
 
 - Adjust **model hyperparameters** (loss, latent dimensions, epochs).  
 - Apply **boost factors** (Star Boost, BigFan Boost).  
+- Evaluation restricted to the **selected playoff round** (e.g., R8, Quarterfinals).  
 
-Evaluation is restricted to the **selected playoff round** (e.g., R8, Quarterfinals).  
 Metrics reported:
-- **Hit@3** → At least one of the player's actual bets appears in the Top-3 recs  
-- **Precision@3** → Fraction of the Top-3 recs that are correct  
+- **Hit@3** → At least one of the player’s actual bets appears in Top-3 recs  
+- **Precision@3** → Fraction of Top-3 recs that are correct  
 - **NDCG** → Ranking quality (higher = better ordering)  
 """)
 
-    # --- Hyperparameter controls ---
+    # --- Hyperparameter Controls ---
     loss = st.selectbox("Loss Function", ["warp", "bpr"], index=0)
     components = st.selectbox("Latent Dimensions", [32, 64, 128], index=0)
 
@@ -459,11 +460,16 @@ Metrics reported:
     epochs = st.slider("Epochs", 10, 100, 30, step=10)
     st.caption("📌 More epochs = better learning, but longer training")
 
-    # --- Train button ---
+    # --- Cached Training Function ---
+    @st.cache_resource
+    def cached_train_model(df, loss, comps, epochs):
+        return train_model(df, loss=loss, comps=comps, epochs=epochs)
+
+    # --- Train Button ---
     if st.button("Train Model"):
         with st.spinner("Training LightFM model... ⏳"):
             try:
-                model, mapping, item_feats, user_feats = train_model(
+                model, mapping, item_feats, user_feats = cached_train_model(
                     df_train, loss=loss, comps=components, epochs=epochs
                 )
 
@@ -478,22 +484,23 @@ Metrics reported:
                     "fan_boost": fan_boost
                 })
 
-                # Evaluate immediately
+                # Evaluate
                 hit, precision, ndcg = evaluate(
-                    model, df_validation, mapping, round_sched, item_feats, user_feats
+                    model, df_validation, mapping, round_sched,
+                    item_feats, user_feats
                 )
                 st.success(
-                    f"✅ Trained Model → Hit@3={hit:.2%}, "
-                    f"Precision@3={precision:.2%}, NDCG={ndcg:.2f}"
+                    f"✅ Trained Model → "
+                    f"Hit@3={hit:.2%}, Precision@3={precision:.2%}, NDCG={ndcg:.2f}"
                 )
             except Exception as e:
-                st.error(f"Training failed: {e}")
+                st.error(f"❌ Training failed: {e}")
 
-    # If no model yet
+    # --- Model Not Trained Yet ---
     if "model" not in st.session_state:
         st.info("⚠️ Train a model first to unlock recommendations and analytics.")
 
-    # --- Hyperparameter tuning ---
+    # --- Hyperparameter Tuning ---
     st.markdown("---")
     st.subheader("🔎 Hyperparameter Tuning")
 
@@ -511,7 +518,7 @@ Metrics reported:
             for l in search_space["loss"]:
                 for comp in search_space["components"]:
                     for ep in search_space["epochs"]:
-                        model, mapping, item_feats, user_feats = train_model(
+                        model, mapping, item_feats, user_feats = cached_train_model(
                             df_train, loss=l, comps=comp, epochs=ep
                         )
                         for sb in search_space["star_boost"]:
@@ -536,17 +543,19 @@ Metrics reported:
 
             best = results_df.iloc[0]
             st.success(
-                f"🏆 Best Config → Loss={best['Loss']}, Dims={best['Dims']}, "
-                f"Epochs={best['Epochs']}, StarBoost={best['StarBoost']}, "
-                f"FanBoost={best['FanBoost']} → "
+                f"🏆 Best Config → "
+                f"Loss={best['Loss']}, Dims={best['Dims']}, Epochs={best['Epochs']}, "
+                f"StarBoost={best['StarBoost']}, FanBoost={best['FanBoost']} → "
                 f"Hit@3={best['Hit@3']:.2%}, Precision@3={best['Precision@3']:.2%}, "
                 f"NDCG={best['NDCG']:.2f}"
             )
         except Exception as e:
-            st.error(f"Tuning failed: {e}")
+            st.error(f"❌ Tuning failed: {e}")
+
 
 
 # --- Tab 2: Player Explorer ---
+# --- TAB 2: Player Explorer ---
 with tab2:
     st.subheader("🎯 Player Explorer")
     st.markdown("""
@@ -561,7 +570,7 @@ Explore **personalized recommendations** for individual players (`mask_id`).
 - Ask the **AI Explainer** why these games were recommended.
 """)
 
-    # --- Require model ---
+    # --- Require trained model ---
     if "model" not in st.session_state:
         st.warning("⚠️ Train a model first in the 'Train & Evaluate' tab.")
     else:
@@ -579,10 +588,13 @@ Explore **personalized recommendations** for individual players (`mask_id`).
 
                 if uid in mask_map:
                     uidx = mask_map[uid]
+
+                    # Restrict to selected round
                     round_games = round_sched["game_norm"].unique()
                     gidx = [game_map[g] for g in round_games if g in game_map]
 
                     if gidx:
+                        # Predict scores
                         scores = st.session_state["model"].predict(
                             uidx, gidx,
                             item_features=st.session_state["item_feats"],
@@ -594,10 +606,9 @@ Explore **personalized recommendations** for individual players (`mask_id`).
                             reverse=True
                         )[:3]
 
-                        # Map back to human-readable names
+                        # Map to human-readable names
                         norm_to_pretty = dict(zip(
-                            playoff_schedule["game_norm"],
-                            playoff_schedule["game"]
+                            playoff_schedule["game_norm"], playoff_schedule["game"]
                         ))
                         rec_games = [norm_to_pretty.get(g, g) for g, _ in recs]
 
@@ -607,13 +618,13 @@ Explore **personalized recommendations** for individual players (`mask_id`).
                         ].unique()
                         actual_pretty = [norm_to_pretty.get(g, g) for g in actual_games if g in norm_to_pretty]
 
-                        # Player segment + regional loyalty
+                        # Player segment & regional loyalty
                         segment = player_segments.get(uid, "Unknown")
                         user_feats_dict = dict(build_user_features(df_train))
                         loyalty = [f for f in user_feats_dict.get(uid, []) if f.startswith("Region_Loyalty_")]
                         region_loyalty = loyalty[0] if loyalty else "None"
 
-                        # Save in session
+                        # Save session state
                         st.session_state.update({
                             "last_uid": uid,
                             "last_recs": rec_games,
@@ -622,17 +633,17 @@ Explore **personalized recommendations** for individual players (`mask_id`).
                             "last_region_loyalty": region_loyalty
                         })
             except Exception as e:
-                st.error(f"Recommendation failed: {e}")
+                st.error(f"❌ Recommendation failed: {e}")
 
         # --- Show Recommendations ---
         if "last_recs" in st.session_state:
-            st.write(f"**Top {round_choice} Recommendations for mask_id {st.session_state['last_uid']}:**")
+            st.markdown(f"**Top {round_choice} Recommendations for mask_id {st.session_state['last_uid']}:**")
             for g in st.session_state["last_recs"]:
                 st.write(f"👉 {g}")
 
         # --- Show Actual Bets ---
         if "last_actual" in st.session_state:
-            st.write(f"**Actual Bets in Validation for mask_id {st.session_state['last_uid']}:**")
+            st.markdown(f"**Actual Bets in Validation for mask_id {st.session_state['last_uid']}:**")
             if st.session_state["last_actual"]:
                 for g in st.session_state["last_actual"]:
                     st.markdown(f"- ✅ **{g}**")
@@ -654,6 +665,7 @@ Explore **personalized recommendations** for individual players (`mask_id`).
                 )
 
                 if date_col:
+                    # Convert to datetime & aggregate
                     player_history[date_col] = pd.to_datetime(player_history[date_col], errors="coerce")
                     history_counts = (
                         player_history.groupby(player_history[date_col].dt.to_period("M"))
@@ -663,7 +675,7 @@ Explore **personalized recommendations** for individual players (`mask_id`).
                     history_counts[date_col] = history_counts[date_col].astype(str)
                     st.line_chart(history_counts.set_index(date_col)["bets"])
 
-                # Top 3 favourite teams
+                # --- Top 3 Favourite Teams ---
                 norm_to_pretty = dict(zip(playoff_schedule["game_norm"], playoff_schedule["game"]))
                 team_counts = []
                 for g in player_history["game_norm"]:
@@ -700,11 +712,11 @@ Explore **personalized recommendations** for individual players (`mask_id`).
                             index="month", columns="team", values="bets"
                         ).fillna(0)
 
-                        # Normalize to % shares
+                        # Normalize to percentage shares
                         team_trend_norm = team_trend_pivot.div(team_trend_pivot.sum(axis=1), axis=0)
                         st.area_chart(team_trend_norm)
                 else:
-                    st.info("No team associations found in this player's betting history.")
+                    st.info("No team associations found for this player's betting history.")
             else:
                 st.info("No historical bets found for this player in training data.")
 
@@ -745,7 +757,7 @@ Explore **personalized recommendations** for individual players (`mask_id`).
                 content = msg["content"] if isinstance(msg, dict) else msg.content
                 st.session_state["last_explanation"] = content
             except Exception as e:
-                st.error(f"AI explanation failed: {e}")
+                st.error(f"❌ AI explanation failed: {e}")
 
         if "last_explanation" in st.session_state:
             st.markdown("### 🤖 AI Explanation")
@@ -760,7 +772,9 @@ Explore **personalized recommendations** for individual players (`mask_id`).
 
 
 
+
 # --- Tab 3: Simulation ---
+# --- TAB 3: Simulation ---
 with tab3:
     st.subheader("📅 Simulation: Series-Level Performance")
     st.markdown("""
@@ -774,6 +788,7 @@ This simulation is **restricted to the selected playoff round** (e.g., R8, Quart
 It helps validate whether the model captures **collective betting behavior** at the series level.
 """)
 
+    # --- Require trained model ---
     if "model" not in st.session_state:
         st.warning("⚠️ Train a model first in the 'Train & Evaluate' tab.")
     else:
@@ -786,14 +801,14 @@ It helps validate whether the model captures **collective betting behavior** at 
                 {v: k for k, v in st.session_state["mapping"][2].items()}
             )
 
+            # Pretty mapping
             norm_to_pretty = dict(zip(
                 playoff_schedule["game_norm"],
                 playoff_schedule["game"]
             ))
 
-            # --- Restrict to round games only ---
-            round_games = round_sched["game_norm"].unique()
-            round_games = [g for g in round_games if g in game_map]
+            # --- Restrict to round games ---
+            round_games = [g for g in round_sched["game_norm"].unique() if g in game_map]
 
             pred_records = []
 
@@ -826,8 +841,7 @@ It helps validate whether the model captures **collective betting behavior** at 
             df_pred = pd.DataFrame(pred_records)
 
             # --- Actual bets for this round ---
-            df_actual = df_validation.copy()
-            df_actual = df_actual[df_actual["game_norm"].isin(round_games)]
+            df_actual = df_validation[df_validation["game_norm"].isin(round_games)].copy()
             df_actual["series"] = df_actual["game_norm"].map(norm_to_pretty)
             actual_counts = (
                 df_actual.groupby("series")["mask_id"]
@@ -842,27 +856,23 @@ It helps validate whether the model captures **collective betting behavior** at 
                 .reset_index(name="predicted_players")
             )
 
-            # --- Combine ---
-            sim = pd.merge(
-                actual_counts, pred_counts,
-                on="series", how="outer"
-            ).fillna(0)
-
+            # --- Merge actual & predicted ---
+            sim = pd.merge(actual_counts, pred_counts, on="series", how="outer").fillna(0)
             sim = sim.sort_values("actual_players", ascending=False)
 
+            # --- Display Results ---
             st.markdown(f"""
-            ✅ Simulation for **{round_choice}** round only.  
-            Compare actual vs. predicted bettors per series.  
+            ✅ **Simulation for {round_choice}**  
+            Compare **actual vs. predicted bettors** per series.
             """)
 
-            # --- Show Data ---
             st.dataframe(sim)
 
             # --- Visualization ---
             st.bar_chart(sim.set_index("series")[["actual_players", "predicted_players"]])
 
         except Exception as e:
-            st.error(f"Simulation failed: {e}")
+            st.error(f"❌ Simulation failed: {e}")
 
 
 
@@ -870,6 +880,7 @@ It helps validate whether the model captures **collective betting behavior** at 
 
 # --- Tab 4: Marketing Analytics ---
 # --- Tab 4: Marketing Analytics ---
+# --- TAB 4: Marketing Analytics ---
 with tab4:
     st.subheader("📊 Marketing Analytics")
     st.markdown("""
@@ -905,7 +916,7 @@ Analyze betting behavior from different marketing perspectives:
         )
         st.bar_chart(player_wagers)
     except Exception as e:
-        st.error(f"Failed to compute top wagers: {e}")
+        st.error(f"❌ Failed to compute top wagers: {e}")
 
     # --- Segment preferences ---
     st.markdown("---")
@@ -927,12 +938,13 @@ Analyze betting behavior from different marketing perspectives:
         st.write("### Activity Segments (Low / Medium / High)")
         st.bar_chart(seg_prefs.loc[:, seg_prefs.columns.isin(big_market_teams)].T)
     except Exception as e:
-        st.error(f"Segment analysis failed: {e}")
+        st.error(f"❌ Segment analysis failed: {e}")
 
     # --- Pre-Playoff → Playoff Betting Flow ---
     st.markdown("---")
     st.subheader("🔀 Pre-Playoff → Playoff Betting Flow")
     try:
+        # Collect playoff teams
         playoff_teams = set()
         for g in playoff_schedule["game"]:
             playoff_teams.update([t.strip() for t in g.split("&")])
@@ -940,7 +952,7 @@ Analyze betting behavior from different marketing perspectives:
         # Pre-playoff bets
         pre = df_train[["mask_id", "teams"]].explode("teams")
 
-        # Playoff bets
+        # Playoff bets (restricted to playoff teams)
         post = df_validation[["mask_id", "teams"]].explode("teams")
         post = post[post["teams"].isin(playoff_teams)]
 
@@ -952,7 +964,6 @@ Analyze betting behavior from different marketing perspectives:
             .reset_index(name="count")
         )
 
-        # Pivot to heatmap
         pivot = (
             trans_counts.pivot(index="teams_pre", columns="teams_playoff", values="count")
             .fillna(0)
@@ -972,7 +983,7 @@ Analyze betting behavior from different marketing perspectives:
         ax.set_title("Pre-Playoff → Playoff Betting Likelihoods")
         st.pyplot(fig)
     except Exception as e:
-        st.error(f"Pre-Playoff → Playoff flow failed: {e}")
+        st.error(f"❌ Pre-Playoff → Playoff flow failed: {e}")
 
     # --- Most Anticipated Game (R8) ---
     st.markdown("---")
@@ -1037,11 +1048,11 @@ Analyze betting behavior from different marketing perspectives:
                 st.write("### Prediction Gaps (Predicted - Actual)")
                 st.dataframe(results_df[["game", "actual_bettors", "predicted_bettors", "gap"]])
             else:
-                st.info("No valid R8 results to display.")
+                st.info("ℹ️ No valid R8 results to display.")
         else:
-            st.info("No R8 series found in schedule or model not trained.")
+            st.info("ℹ️ No R8 series found in schedule or model not trained.")
     except Exception as e:
-        st.error(f"R8 analysis failed: {e}")
+        st.error(f"❌ R8 analysis failed: {e}")
 
     # --- Marketing Chatbot ---
     st.markdown("---")
@@ -1061,5 +1072,5 @@ Analyze betting behavior from different marketing perspectives:
             st.markdown("### 📝 AI Marketing Insight")
             st.write(resp.choices[0].message.content)
         except Exception as e:
-            st.error(f"Chatbot failed: {e}")
+            st.error(f"❌ Chatbot failed: {e}")
 
