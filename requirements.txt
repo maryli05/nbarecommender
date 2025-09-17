@@ -1,16 +1,3 @@
-# Core numerical + ML dependencies (install first so LightFM has them)
-numpy==1.26.4
-scipy==1.11.4
-pandas==2.2.2
-scikit-learn==1.5.0
-matplotlib==3.8.4
-seaborn==0.13.2
-
-# ✅ LightFM (use stable version with wheels available for Py3.9)
-lightfm @ https://github.com/lyst/lightfm/releases/download/1.16/lightfm-1.16-cp39-cp39-manylinux2014_x86_64.whl
-
-
-# App + infra dependencies
 boto3==1.28.44
 extra_streamlit_components==0.1.60
 pymongo==4.5.0
@@ -23,6 +10,18 @@ stripe==6.5.0
 PyJWT==2.8.0
 openai==1.13.3
 openpyxl==3.1.2
+
+# Core data/ML deps
+numpy==1.26.4
+scipy==1.11.4
+pandas==2.2.2
+scikit-learn==1.5.0
+matplotlib==3.8.4
+seaborn==0.13.2
+
+# ✅ Prebuilt LightFM wheel for Python 3.9 (Linux)
+lightfm @ https://github.com/lyst/lightfm/releases/download/1.16/lightfm-1.16-cp39-cp39-manylinux2014_x86_64.whl
+
 
 
 
