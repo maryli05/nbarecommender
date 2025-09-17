@@ -18,7 +18,10 @@ pandas==2.2.2
 scikit-learn==1.5.0
 matplotlib==3.8.4
 seaborn==0.13.2
-lightfm==1.17
+
+# ✅ Install LightFM from wheel instead of source
+lightfm @ https://github.com/lyst/lightfm/releases/download/1.17/lightfm-1.17-cp310-cp310-manylinux2014_x86_64.whl
+
 
 
 
