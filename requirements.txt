@@ -11,7 +11,7 @@ PyJWT==2.8.0
 openai==1.13.3
 openpyxl==3.1.2
 
-# Core data/ML deps
+# Core data/ML dependencies
 numpy==1.26.4
 scipy==1.11.4
 pandas==2.2.2
@@ -19,8 +19,9 @@ scikit-learn==1.5.0
 matplotlib==3.8.4
 seaborn==0.13.2
 
-# ✅ Prebuilt LightFM wheel for Python 3.9 (Linux)
-lightfm @ https://github.com/lyst/lightfm/releases/download/1.16/lightfm-1.16-cp39-cp39-manylinux2014_x86_64.whl
+# Install LightFM from source (needs system libs)
+lightfm==1.17
+
 
 
 
