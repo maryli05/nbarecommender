@@ -28,16 +28,16 @@ jobs:
       - name: Upgrade pip
         run: pip install --upgrade pip
 
-      # 👇 System-level dependencies required for LightFM & numpy/scipy
+      # 👇 Install system dependencies needed for LightFM/scipy/numpy
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential libopenblas-dev libomp-dev
+        run: sudo apt-get update && sudo apt-get install -y \
+             build-essential \
+             libopenblas-dev \
+             liblapack-dev \
+             gfortran
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
-
-      # Optional: Add step to run tests here
-      # - name: Run tests
-      #   run: pytest
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
@@ -64,7 +64,4 @@ jobs:
           app-name: 'nbarecommender'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_619B3FB2A3D44462AE060F124FFAC2DA }}
-
-
-
 
