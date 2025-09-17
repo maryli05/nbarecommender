@@ -28,34 +28,26 @@ jobs:
       - name: Upgrade pip
         run: pip install --upgrade pip setuptools wheel
 
+      # 👇 Clear any cached packages so old openai/azure-ai-openai doesn’t linger
+      - name: Clear pip cache
+        run: pip cache purge
+
       # 👇 System dependencies required for LightFM, numpy, scipy
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libopenblas-dev liblapack-dev gfortran
 
-      # 👇 Remove conflicting Azure AI SDKs
-      - name: Remove conflicting Azure AI SDKs
-        run: |
-          pip uninstall -y azure-ai-openai || true
-
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      # 👇 Upload only necessary files for deployment
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
         with:
           name: python-app
           path: |
-            app6.py
-            requirements.txt
-            .streamlit/
-            utils/
-            models/
-            static/
-            templates/
-            Procfile
+            .
+            !venv/
 
   deploy:
     runs-on: ubuntu-latest
@@ -74,4 +66,5 @@ jobs:
           app-name: 'nbarecommender'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_619B3FB2A3D44462AE060F124FFAC2DA }}
-          clean: true   # 👈 This forces overwrite to avoid 409 Conflict
+
+
