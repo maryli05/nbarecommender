@@ -14,8 +14,6 @@ load_dotenv()
 print("API KEY LOADED:", os.getenv("AZURE_OPENAI_API_KEY"))
 
 
-from openai import AzureOpenAI
-
 client = AzureOpenAI(
     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
